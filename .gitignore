@@ -1,0 +1,102 @@
+# Revpd — only source belongs in the repository.
+#
+# Anything generated, downloaded, machine-specific or secret stays out. A
+# fresh clone plus `npm ci && npm run build && go build ./cmd/revpd` has to be
+# enough to reproduce a release.
+
+# ─── Secrets ────────────────────────────────────────────────────────────────
+# .env holds the key that decrypts every enrolled second factor.
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+!deploy/*.example.*
+
+# Generated on first run by the RDP listener.
+rdp-cert.pem
+rdp-key.pem
+
+# ─── Runtime state ──────────────────────────────────────────────────────────
+.dev-data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# The deployed configuration is per-machine; the example stays tracked.
+/revpd.yaml
+/dev.yaml
+!deploy/revpd.example.yaml
+
+# ─── Build output ───────────────────────────────────────────────────────────
+# The binary is 18 MB and rebuilt from source in seconds.
+/revpd
+/revpd.exe
+/revpd-linux*
+/revpd-darwin*
+/revpd-windows*
+/dist/
+/release/
+*.tar.gz
+*.zip
+checksums.txt
+
+# Compiled frontend, embedded into the binary at build time.
+internal/web/dist/
+
+# ─── Go ─────────────────────────────────────────────────────────────────────
+*.test
+*.exe
+*.out
+*.prof
+*.pprof
+coverage.*
+
+# Fuzz inputs that found a failure are worth committing; the cache is not.
+testdata/fuzz/*/[0-9a-f][0-9a-f]*
+
+# Vendored dependencies: go.mod and go.sum already pin them exactly.
+/vendor/
+
+# ─── Frontend ───────────────────────────────────────────────────────────────
+node_modules/
+web/dist/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+
+# ─── Test artefacts ─────────────────────────────────────────────────────────
+playwright-report/
+test-results/
+test/screenshots/*.actual.png
+
+# ─── Editors and operating systems ──────────────────────────────────────────
+.DS_Store
+.AppleDouble
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+.direnv/
+
+# ─── Assistant notes ────────────────────────────────────────────────────────
+# Working notes rather than documentation someone cloning this would need.
+# README.md and deploy/HARDENING.md are the documentation.
+/CLAUDE.md
+/.claude/

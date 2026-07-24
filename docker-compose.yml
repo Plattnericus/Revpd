@@ -1,0 +1,60 @@
+# Revpd via Docker.
+#
+#   docker compose up -d
+#
+# Wake-on-LAN needs the magic packet to reach the target's network segment, so
+# the container shares the host's network by default. Without that the packet
+# would never leave Docker's bridge.
+
+services:
+  revpd:
+    image: ghcr.io/plattnericus/revpd:latest
+    # Build locally instead of pulling:
+    #   docker compose build
+    build:
+      context: .
+      args:
+        VERSION: local
+
+    container_name: revpd
+    restart: unless-stopped
+
+    # Required for Wake-on-LAN: a bridged container cannot broadcast onto the
+    # LAN. It also means ports below are the host's directly.
+    network_mode: host
+
+    # The only privilege needed, so the process still runs unprivileged.
+    cap_add:
+      - NET_BIND_SERVICE
+
+    security_opt:
+      - no-new-privileges:true
+
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+
+    volumes:
+      - revpd-data:/var/lib/revpd
+      - ./revpd.yaml:/etc/revpd/revpd.yaml:ro
+
+    env_file:
+      - .env
+
+    healthcheck:
+      # The setup endpoint answers before anything is configured, which makes
+      # it the one thing that is always a valid liveness probe.
+      test: ["CMD", "/usr/local/bin/revpd", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  revpd-data:

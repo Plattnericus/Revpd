@@ -1,0 +1,163 @@
+# Revpd configuration.
+#
+# Copy to /etc/revpd/revpd.yaml. Secrets do NOT belong here — they come from
+# the environment, see .env.example.
+#
+# Every value below is already the default. Delete what you do not need to
+# change; a short config is easier to reason about than a complete one.
+#
+# A misspelled key makes startup fail rather than being ignored silently.
+# For security settings that is deliberate.
+
+data_dir: /var/lib/revpd
+
+
+web:
+  # The web interface. Together with relay.listen below these are the only two
+  # ports that need to face the internet — nothing else is opened.
+  #
+  # Bind it to 127.0.0.1 instead if you would rather reach it through a tunnel:
+  #     ssh -L 8443:127.0.0.1:8443 you@gateway
+  listen: ":8443"
+
+  # What people type into their browser and their RDP client.
+  # Also the WebAuthn relying-party ID — changing it invalidates all passkeys.
+  hostname: gw.example.com
+
+  # The portal always speaks TLS. Leaving these empty generates a self-signed
+  # certificate into data_dir rather than falling back to plain HTTP — a
+  # session cookie must never travel in the clear, and passkeys only work in a
+  # secure context at all.
+  #
+  # Point them at a real certificate to stop browsers warning.
+  tls_cert: ""
+  tls_key: ""
+
+  # Or let Let's Encrypt handle it. Needs port 80 reachable from outside,
+  # which would be a third port; leave it off unless you want that.
+  acme: false
+
+  # Only set this when something like nginx sits in front. Trusting forwarded
+  # headers from anywhere would let anyone claim any source address and walk
+  # into somebody else's session.
+  trusted_proxies: []
+
+
+relay:
+  # The one port that faces the internet. Everything arrives here.
+  listen: ":3389"
+
+  # Rejected connections are held briefly instead of being closed at once.
+  # Scanners hammering 3389 pay for the wait; real clients never land here.
+  tarpit: 5s
+
+  max_conns_per_ip: 8
+  dial_timeout: 10s
+
+  # Drops a session that has gone quiet, so a half-dead link frees its
+  # file descriptors instead of lingering.
+  idle_timeout: 4h
+
+
+grant:
+  # How long a passed MFA stays good for STARTING a connection. A session
+  # that is already running is not affected by this.
+  ttl: 2m
+
+  # After a dropped link the client may reconnect within this window without
+  # a fresh MFA round. Without it, every WLAN handover would ask again.
+  reuse_window: 10m
+
+  # A grant is tied to the address it was issued to. 32 means an exact match.
+  # Lower it only if your clients roam within a carrier block and you accept
+  # the trade.
+  ipv4_prefix_bits: 32
+  ipv6_prefix_bits: 64
+
+
+rdp_login:
+  # The normal way in. You type your password and one-time code straight into
+  # the Windows Remote Desktop client:
+  #
+  #     MyPassword,123456        code from your authenticator app
+  #     MyPassword,push          approve on your phone (needs Duo)
+  #     MyPassword,K7RM2-9XQPD   backup code
+  #
+  # The gateway checks it, wakes the machine, and tells the client to reconnect
+  # to the real one. No browser involved.
+  enabled: true
+
+  # Certificate the RDP listener presents. Leave empty and a self-signed one is
+  # generated into data_dir — the same thing a stock Windows host does, so the
+  # client shows the same "identity cannot be verified" prompt either way.
+  # Point these at a real certificate to make the prompt go away.
+  tls_cert: ""
+  tls_key: ""
+
+  # Budget for the whole login, including waiting for the machine to boot.
+  timeout: 3m
+
+  # Budget for a single step, so a stalled client cannot hold a slot.
+  step_timeout: 30s
+
+  # Hand the password on to Windows so you type it once. Turn this off and
+  # Windows asks again over NLA — safer, because the gateway then never holds
+  # a credential it could pass along, but you type twice.
+  pass_through_credentials: true
+
+
+jit:
+  # Approve a connection out of band instead of typing a code: the client
+  # connects, your phone buzzes, you tap approve.
+  #
+  # Off by default. It leans on the username the RDP client sends, which is
+  # not authenticated — it only decides who gets asked. Needs Duo configured.
+  enabled: false
+
+  # How long the connection is held while waiting for that approval.
+  hold_timeout: 45s
+  peek_timeout: 5s
+  max_pending_per_ip: 3
+
+  # Used when the client cannot say which machine it wants. Leave empty if
+  # each account has exactly one target.
+  default_target: ""
+
+
+wol:
+  probe_interval: 500ms
+
+  # Windows accepts the TCP handshake a moment before RDP is really ready.
+  # Connecting into that gap gives a confusing protocol error.
+  probe_settle: 2s
+
+  # Guards against a single dropped UDP datagram.
+  repeat: 3
+
+
+auth:
+  session_ttl: 12h
+  session_idle: 30m
+
+  # Failures beyond this trigger a lockout that doubles each time.
+  max_failures: 5
+  lockout_base: 30s
+  lockout_max: 1h
+
+  # Extra 30-second steps accepted on each side of now. 1 is the sane value:
+  # it forgives a slightly wrong clock without widening the window much.
+  totp_skew: 1
+
+  backup_codes: 10
+
+  # Which environment variable holds the at-rest encryption key.
+  master_key_env: REVPD_MASTER_KEY
+
+
+rdgw:
+  # Remote Desktop Gateway over HTTPS, for networks where 3389 cannot be
+  # exposed at all. Needs a certificate from a real CA and a hostname
+  # rather than an IP for the target.
+  enabled: false
+  listen: ":443"
+  token_ttl: 5m

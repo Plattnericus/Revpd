@@ -1,0 +1,140 @@
+@import 'tailwindcss';
+
+/*
+  Design tokens. The rules that keep this from looking generic live in
+  CLAUDE.md section 7.1 — no gradients, one accent per screen, hairlines
+  instead of shadows, colour only ever means status.
+*/
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-sheet: 20px;
+}
+
+:root {
+  color-scheme: light;
+
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-sunken: #fafafa;
+  --text: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #a1a1a6;
+  --hairline: rgba(0, 0, 0, 0.09);
+  --hairline-strong: rgba(0, 0, 0, 0.16);
+  --fill: rgba(120, 120, 128, 0.12);
+  --fill-hover: rgba(120, 120, 128, 0.2);
+
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-soft: rgba(0, 113, 227, 0.1);
+
+  --green: #248a3d;
+  --green-soft: rgba(36, 138, 61, 0.12);
+  --orange: #c93400;
+  --orange-soft: rgba(201, 52, 0, 0.12);
+  --red: #d70015;
+  --red-soft: rgba(215, 0, 21, 0.12);
+  --grey: #8e8e93;
+  --grey-soft: rgba(142, 142, 147, 0.14);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
+  --shadow-sheet: 0 12px 48px rgba(0, 0, 0, 0.18);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #000000;
+  --surface: #1c1c1e;
+  --surface-sunken: #141416;
+  --text: #f5f5f7;
+  --text-secondary: #98989d;
+  --text-tertiary: #6e6e73;
+  --hairline: rgba(255, 255, 255, 0.11);
+  --hairline-strong: rgba(255, 255, 255, 0.2);
+  --fill: rgba(120, 120, 128, 0.24);
+  --fill-hover: rgba(120, 120, 128, 0.36);
+
+  --accent: #0a84ff;
+  --accent-hover: #3a9bff;
+  --accent-soft: rgba(10, 132, 255, 0.18);
+
+  --green: #30d158;
+  --green-soft: rgba(48, 209, 88, 0.16);
+  --orange: #ff9f0a;
+  --orange-soft: rgba(255, 159, 10, 0.16);
+  --red: #ff453a;
+  --red-soft: rgba(255, 69, 58, 0.16);
+  --grey: #8e8e93;
+  --grey-soft: rgba(142, 142, 147, 0.18);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sheet: 0 12px 48px rgba(0, 0, 0, 0.7);
+}
+
+* {
+  border-color: var(--hairline);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.47;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+/* Times, byte counters and countdowns must not jitter as digits change. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Thin scrollbars so long tables do not shout. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
