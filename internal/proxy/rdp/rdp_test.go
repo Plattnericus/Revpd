@@ -97,7 +97,6 @@ func serveOnce(t *testing.T, auth Authenticator) (addr string, done <-chan Outco
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	t.Cleanup(func() { ln.Close() })
 
 	login := NewLogin(Options{
 		TLSConfig:        testTLSConfig(t),
@@ -105,8 +104,19 @@ func serveOnce(t *testing.T, auth Authenticator) (addr string, done <-chan Outco
 		StepTimeout:      10 * time.Second,
 	}, auth)
 
+	// The goroutine below borrows t, so it must not outlive the test. Tests
+	// that ignore the outcome would otherwise leave it logging into a finished
+	// test, which panics.
+	finished := make(chan struct{})
+	t.Cleanup(func() {
+		ln.Close()
+		<-finished
+	})
+
 	out := make(chan Outcome, 1)
 	go func() {
+		defer close(finished)
+
 		conn, err := ln.Accept()
 		if err != nil {
 			out <- OutcomeFailed

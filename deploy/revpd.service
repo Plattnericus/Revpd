@@ -1,6 +1,6 @@
 [Unit]
 Description=Revpd — MFA gateway for RDP with Wake-on-LAN
-Documentation=https://github.com/nexor/revpd
+Documentation=https://github.com/plattnericus/revpd
 After=network-online.target
 Wants=network-online.target
 
@@ -34,6 +34,8 @@ ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
 ProtectProc=invisible
+ProcSubset=pid
+RemoveIPC=yes
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes

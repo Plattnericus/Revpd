@@ -70,25 +70,33 @@ type Log struct {
 	db *sql.DB
 
 	// Appends must serialize: two writers racing would both read the same
-	// prev_hash and fork the chain.
-	mu   sync.Mutex
-	last string
+	// prev_hash and fork the chain. The mutex covers this process; the
+	// transaction in append covers the command line running alongside the
+	// service, which is a second process on the same file.
+	mu sync.Mutex
 }
 
 func New(db *sql.DB) (*Log, error) {
 	l := &Log{db: db}
 
-	var h string
-	err := db.QueryRow(`SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1`).Scan(&h)
-	switch {
-	case err == sql.ErrNoRows:
-		l.last = genesis
-	case err != nil:
+	// Fail here rather than on the first event if the table is unusable.
+	if _, err := l.head(context.Background()); err != nil {
 		return nil, fmt.Errorf("read audit head: %w", err)
-	default:
-		l.last = h
 	}
 	return l, nil
+}
+
+func (l *Log) head(ctx context.Context) (string, error) {
+	var h string
+	err := l.db.QueryRowContext(ctx,
+		`SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1`).Scan(&h)
+	switch {
+	case err == sql.ErrNoRows:
+		return genesis, nil
+	case err != nil:
+		return "", err
+	}
+	return h, nil
 }
 
 // Append writes an entry and links it to the previous one.
@@ -109,25 +117,64 @@ func (l *Log) Append(ctx context.Context, e Entry) error {
 	defer l.mu.Unlock()
 
 	ts := e.TS.UnixMilli()
-	h := chainHash(l.last, ts, e.Actor, e.Action, e.Object, e.SrcIP, string(detail))
 
-	_, err = l.db.ExecContext(ctx,
-		`INSERT INTO audit_log (ts, actor, action, object, src_ip, detail_json, prev_hash, hash)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		ts, e.Actor, e.Action, e.Object, e.SrcIP, string(detail), l.last, h)
+	// Remembering the head between calls looks tempting and is wrong: the
+	// service and `revpd` on the command line are two processes on one file,
+	// so either one writing leaves the other's copy pointing at a row that is
+	// no longer last. The next entry would then chain to the wrong place and
+	// verification would cry tampering over ordinary administration.
+	//
+	// So the head is read and extended inside a single transaction. When the
+	// other writer wins the race SQLite refuses the commit, and we take a
+	// fresh look rather than writing a fork.
+	for attempt := 0; attempt < 8; attempt++ {
+		if err = l.appendOnce(ctx, e, ts, string(detail)); err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * 2 * time.Millisecond)
+	}
+	return fmt.Errorf("append audit entry: %w", err)
+}
+
+func (l *Log) appendOnce(ctx context.Context, e Entry, ts int64, detail string) error {
+	tx, err := l.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("append audit entry: %w", err)
+		return err
+	}
+	defer tx.Rollback()
+
+	prev := genesis
+	var h string
+	switch err := tx.QueryRowContext(ctx,
+		`SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1`).Scan(&h); {
+	case err == sql.ErrNoRows:
+	case err != nil:
+		return err
+	default:
+		prev = h
 	}
 
-	l.last = h
-	return nil
+	hash := chainHash(prev, ts, e.Actor, e.Action, e.Object, e.SrcIP, detail)
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO audit_log (ts, actor, action, object, src_ip, detail_json, prev_hash, hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		ts, e.Actor, e.Action, e.Object, e.SrcIP, detail, prev, hash); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Head returns the current chain tip, handy for health checks.
 func (l *Log) Head() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.last
+	h, err := l.head(context.Background())
+	if err != nil {
+		return ""
+	}
+	return h
 }
 
 // Break describes where verification failed.

@@ -50,6 +50,12 @@ func LoadOrCreateCert(dir, hostname, certFile, keyFile string) (tls.Certificate,
 		return tls.Certificate{}, err
 	}
 
+	// The portal keeps its pair in a subdirectory of the data directory, which
+	// the installer has no reason to know about.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return tls.Certificate{}, fmt.Errorf("certificate directory: %w", err)
+	}
+
 	if err := os.WriteFile(crtPath, crtPEM, 0o600); err != nil {
 		return tls.Certificate{}, fmt.Errorf("write rdp certificate: %w", err)
 	}
@@ -58,7 +64,7 @@ func LoadOrCreateCert(dir, hostname, certFile, keyFile string) (tls.Certificate,
 		return tls.Certificate{}, fmt.Errorf("write rdp key: %w", err)
 	}
 
-	slog.Info("generated a self-signed certificate for the rdp listener",
+	slog.Info("generated a self-signed certificate",
 		"hostname", hostname, "path", crtPath, "valid_days", 825)
 	return cert, nil
 }
