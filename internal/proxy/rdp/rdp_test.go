@@ -411,8 +411,8 @@ func TestClientInfoRejectsGarbage(t *testing.T) {
 	cases := [][]byte{
 		nil,
 		{0x00},
-		append(le16(secInfoPkt), le16(0)...),        // header only
-		append(le16(secLicensePkt), le16(0)...),     // wrong pdu type
+		append(le16(secInfoPkt), le16(0)...),    // header only
+		append(le16(secLicensePkt), le16(0)...), // wrong pdu type
 		append(le16(secInfoPkt|secEncrypt), make([]byte, 40)...), // encrypted
 	}
 

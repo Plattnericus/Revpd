@@ -198,8 +198,8 @@ func (l *Log) Verify(ctx context.Context) (*Break, int, error) {
 
 	for rows.Next() {
 		var (
-			id                                              int64
-			ts                                              int64
+			id                                               int64
+			ts                                               int64
 			actor, action, object, srcIP, detail, ph, stored string
 		)
 		if err := rows.Scan(&id, &ts, &actor, &action, &object, &srcIP, &detail, &ph, &stored); err != nil {
