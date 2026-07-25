@@ -41,14 +41,62 @@ func main() {
 }
 
 func run() error {
+	// Bare `revpd` in a terminal opens the menu. Anywhere else — a pipe, a
+	// script, a cron job — it prints help and returns, because a prompt that
+	// nobody can answer would hang forever.
 	if len(os.Args) < 2 {
+		if isInteractive() {
+			return runMenu()
+		}
 		usage()
-		return errors.New("no command given")
+		return nil
 	}
 
 	switch os.Args[1] {
+	// Everyday management.
+	case "menu":
+		return runMenu()
+	case "user":
+		return cmdUser(os.Args[2:])
+	case "target", "machine":
+		return cmdTarget(os.Args[2:])
+	case "access":
+		return cmdAccess(os.Args[2:])
+	case "passkey", "passkeys":
+		return cmdPasskey(os.Args[2:])
+	case "wake":
+		return cmdWake(os.Args[2:])
+	case "sessions", "session":
+		return cmdSessions(os.Args[2:])
+	case "service":
+		return cmdService(os.Args[2:])
+	case "logs":
+		return cmdLogs(os.Args[2:])
+	case "status":
+		return cmdStatus()
+	case "config":
+		return cmdConfig(os.Args[2:])
+	case "doctor", "check":
+		return cmdDoctor()
+	case "backup":
+		return cmdBackup(os.Args[2:])
+	case "restore":
+		return cmdRestore(os.Args[2:])
+	case "uninstall":
+		return cmdUninstall(os.Args[2:])
+
+	// The gateway itself.
 	case "serve":
 		return cmdServe(os.Args[2:])
+	case "audit":
+		// `audit verify` checks the chain; bare `audit` shows the log.
+		if len(os.Args) > 2 && os.Args[2] == "verify" {
+			return cmdAudit(os.Args[2:])
+		}
+		return cmdAuditList(os.Args[2:])
+
+	// Kept working because install.sh calls them, and so does anyone who
+	// wrote a script against an earlier version.
 	case "genkey":
 		return cmdGenKey()
 	case "useradd":
@@ -57,8 +105,7 @@ func run() error {
 		return cmdEnroll(os.Args[2:])
 	case "targetadd":
 		return cmdTargetAdd(os.Args[2:])
-	case "audit":
-		return cmdAudit(os.Args[2:])
+
 	case "version", "-v", "--version":
 		fmt.Println("revpd", version)
 		return nil
@@ -74,16 +121,49 @@ func run() error {
 func usage() {
 	fmt.Fprint(os.Stderr, `revpd — MFA gateway for RDP with Wake-on-LAN
 
-  revpd genkey                       print a new master key for REVPD_MASTER_KEY
-  revpd useradd  -u NAME [-admin]    create an account (prompts for a password)
-  revpd enroll   -u NAME             set up the second factor, prints a QR URI
-  revpd targetadd -name N -ip IP -mac MAC
-  revpd serve    [-c revpd.yaml]     run the gateway
-  revpd audit verify                 check the audit chain for tampering
+  revpd                            open the menu
+  revpd doctor                     check everything and say what to fix
+
+People
+  revpd user add NAME [--admin]    create an account
+  revpd user list
+  revpd user rm NAME
+  revpd user reset NAME            new authenticator QR and backup codes
+  revpd user lock|unlock NAME      block or restore sign-in
+  revpd passkey list USER
+  revpd passkey rm USER ID
+
+Machines
+  revpd target add NAME IP MAC [--for USER]
+  revpd target list
+  revpd target rm NAME
+  revpd wake NAME [--wait]         send the wake-up signal now
+
+Who can reach what
+  revpd access                     the whole matrix
+  revpd access grant USER MACHINE
+  revpd access revoke USER MACHINE
+
+Running it
+  revpd status                     a one-screen overview
+  revpd service start|stop|restart|status
+  revpd logs [-f]
+  revpd config [edit]              what it is actually running with
+  revpd sessions                   who is connected right now
+  revpd sessions kick ID
+
+History
+  revpd audit                      what has happened
+  revpd audit verify               prove the log was not tampered with
+
+Moving and removing
+  revpd backup [FILE]              everything in one encrypted file
+  revpd restore [FILE]
+  revpd uninstall [--keep-data]    remove Revpd from this machine
+
   revpd version
 
-Config is read from the file given with -c, then overridden by the
-environment. See .env.example for the variables.
+Settings live in /etc/revpd/revpd.yaml, secrets in /etc/revpd/.env.
 `)
 }
 
@@ -357,9 +437,12 @@ func cmdUserAdd(args []string) error {
 	return nil
 }
 
+// cmdEnroll is the older spelling, kept because install.sh calls it.
 func cmdEnroll(args []string) error {
 	fs := flag.NewFlagSet("enroll", flag.ExitOnError)
-	cfgPath := fs.String("c", defaultConfigPath(), "path to config file")
+	// Accepted and ignored: enrollUser resolves the config itself, and the
+	// installer always passes the default path anyway.
+	fs.String("c", defaultConfigPath(), "path to config file")
 	name := fs.String("u", "", "username")
 	fs.Parse(args)
 
@@ -367,7 +450,14 @@ func cmdEnroll(args []string) error {
 		return errors.New("-u is required")
 	}
 
-	cfg, err := config.Load(*cfgPath)
+	return enrollUser(*name)
+}
+
+// enrollUser issues a fresh authenticator secret and a new set of backup
+// codes. Shared by `revpd enroll`, `revpd user reset` and the menu, so all
+// three behave identically.
+func enrollUser(name string) error {
+	cfg, err := config.Load(defaultConfigPath())
 	if err != nil {
 		return err
 	}
@@ -379,9 +469,9 @@ func cmdEnroll(args []string) error {
 	}
 	defer db.Close()
 
-	u, err := db.UserByName(ctx, *name)
+	u, err := db.UserByName(ctx, name)
 	if err != nil {
-		return fmt.Errorf("no such user %q", *name)
+		return fmt.Errorf("no such user %q", name)
 	}
 
 	secret, uri, err := mfa.TOTP{Skew: cfg.Auth.TOTPSkew}.Enroll("Revpd ("+cfg.Web.Hostname+")", u.Username)

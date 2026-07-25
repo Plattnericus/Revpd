@@ -162,7 +162,12 @@ func (e *Engine) AuthorizeToken(ctx context.Context, srcIP net.IP, token string)
 
 	// Issue a normal grant too, so a reconnect after a dropped link works
 	// without another trip through the login.
-	grantID, err := e.issue(ctx, user, target, e.key(srcIP), "portal")
+	//
+	// It lasts for the reuse window rather than the grant TTL: the TTL bounds
+	// how long someone has to *start* connecting, while this covers a session
+	// already under way. Using the TTL here would end a live session the
+	// moment the network hiccupped after it expired.
+	grantID, err := e.issueFor(ctx, user, target, e.key(srcIP), "portal", e.cfg.Grant.ReuseWindow)
 	if err != nil {
 		slog.Warn("could not issue a follow-on grant", "err", err)
 	}
@@ -204,9 +209,14 @@ func (e *Engine) checkSecondFactor(ctx context.Context, u *store.User, factor st
 	if err != nil {
 		return false
 	}
-	// Burn the step before the login counts, or a replay slips through.
-	if err := e.db.SetTOTPCounter(ctx, u.ID, counter); err != nil {
-		slog.Error("could not record totp counter", "user", u.Username, "err", err)
+
+	// Claim the step, and only accept the login if this call is what burned
+	// it. Two logins arriving together with the same code both pass Verify —
+	// they read the same counter — so the database has to pick one.
+	if err := e.db.ClaimTOTPCounter(ctx, u.ID, counter); err != nil {
+		if !errors.Is(err, store.ErrCounterAlreadyUsed) {
+			slog.Error("could not record totp counter", "user", u.Username, "err", err)
+		}
 		return false
 	}
 	return true

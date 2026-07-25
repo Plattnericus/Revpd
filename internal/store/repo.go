@@ -96,15 +96,41 @@ func (db *DB) UserByRDPHint(ctx context.Context, hint string) (*User, error) {
 		 LIMIT 1`, hint, hint))
 }
 
-func (db *DB) SetTOTPCounter(ctx context.Context, userID, counter int64) error {
-	// Guard against a concurrent login rolling the counter backwards.
-	_, err := db.ExecContext(ctx,
+// ErrCounterAlreadyUsed means another login got to this step first.
+var ErrCounterAlreadyUsed = errors.New("this one-time code has already been used")
+
+// ClaimTOTPCounter burns a TOTP step, and reports whether this caller is the
+// one that burned it.
+//
+// The check and the write are a single statement on purpose. Reading the
+// counter and then updating it would leave a window in which several logins
+// all see the same old value and all decide their code is fresh — which is
+// exactly the replay the counter exists to stop. The WHERE clause makes SQLite
+// arbitrate, and RowsAffected says who won.
+func (db *DB) ClaimTOTPCounter(ctx context.Context, userID, counter int64) error {
+	res, err := db.ExecContext(ctx,
 		`UPDATE users SET totp_last_counter = ? WHERE id = ? AND totp_last_counter < ?`,
 		counter, userID, counter)
 	if err != nil {
-		return fmt.Errorf("update totp counter: %w", err)
+		return fmt.Errorf("claim totp counter: %w", err)
+	}
+
+	if n, _ := res.RowsAffected(); n != 1 {
+		return ErrCounterAlreadyUsed
 	}
 	return nil
+}
+
+// SetTOTPCounter is the older spelling, kept for callers that only want the
+// counter moved forward and do not care who did it.
+//
+// Deprecated: use ClaimTOTPCounter anywhere a login depends on the result.
+func (db *DB) SetTOTPCounter(ctx context.Context, userID, counter int64) error {
+	err := db.ClaimTOTPCounter(ctx, userID, counter)
+	if errors.Is(err, ErrCounterAlreadyUsed) {
+		return nil
+	}
+	return err
 }
 
 func (db *DB) SetTOTPSecret(ctx context.Context, userID int64, enc []byte) error {
@@ -114,6 +140,40 @@ func (db *DB) SetTOTPSecret(ctx context.Context, userID int64, enc []byte) error
 		return fmt.Errorf("store totp secret: %w", err)
 	}
 	return nil
+}
+
+// DeleteUser removes an account and everything attached to it.
+//
+// The foreign keys carry the rest: backup codes, passkeys, target grants,
+// sessions and grants are ON DELETE CASCADE, and the audit trail keeps its
+// entries because it references nothing.
+func (db *DB) DeleteUser(ctx context.Context, id int64) error {
+	res, err := db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteTarget removes a machine. Past sessions survive with a null target, so
+// the activity log does not lose its history.
+func (db *DB) DeleteTarget(ctx context.Context, id int64) error {
+	res, err := db.ExecContext(ctx, `DELETE FROM targets WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete target: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// TargetByName resolves the name people actually type on the command line.
+func (db *DB) TargetByName(ctx context.Context, name string) (*Target, error) {
+	return scanTarget(db.QueryRowContext(ctx, `SELECT `+targetCols+` FROM targets WHERE name = ?`, name))
 }
 
 func (db *DB) SetUserStatus(ctx context.Context, userID int64, status string) error {

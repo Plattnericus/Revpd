@@ -51,6 +51,21 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	return db, nil
 }
 
+// BackupTo writes a consistent copy of the database to path.
+//
+// VACUUM INTO rather than copying the file: in WAL mode the .db on disk is not
+// the whole story, and a plain copy can produce a backup that only turns out
+// to be broken when someone tries to restore it.
+func (db *DB) BackupTo(ctx context.Context, path string) error {
+	// The driver has no placeholder for this, so the path is quoted by hand.
+	// It comes from our own code, never from a request.
+	_, err := db.ExecContext(ctx, `VACUUM INTO '`+strings.ReplaceAll(path, "'", "''")+`'`)
+	if err != nil {
+		return fmt.Errorf("back up database to %s: %w", path, err)
+	}
+	return nil
+}
+
 func (db *DB) migrate(ctx context.Context) error {
 	_, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (

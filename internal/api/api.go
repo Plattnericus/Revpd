@@ -332,9 +332,13 @@ func (s *Server) verifySecondFactor(ctx context.Context, u *store.User, code str
 		return false
 	}
 
-	// Burn the step before the login counts, or a replay could slip through.
-	if err := s.db.SetTOTPCounter(ctx, u.ID, counter); err != nil {
-		slog.Error("could not record totp counter", "user", u.Username, "err", err)
+	// Claim the step, and only accept the login if this call burned it. Two
+	// requests arriving with the same code both pass Verify, so the database
+	// decides which one is the replay.
+	if err := s.db.ClaimTOTPCounter(ctx, u.ID, counter); err != nil {
+		if !errors.Is(err, store.ErrCounterAlreadyUsed) {
+			slog.Error("could not record totp counter", "user", u.Username, "err", err)
+		}
 		return false
 	}
 	return true

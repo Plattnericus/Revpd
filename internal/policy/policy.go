@@ -296,7 +296,15 @@ func (e *Engine) Unlock(ctx context.Context, u *store.User, targetID int64, srcI
 	return target, id, nil
 }
 
+// issue creates a grant valid for the configured TTL — long enough to start a
+// connection, no longer.
 func (e *Engine) issue(ctx context.Context, u *store.User, t *store.Target, ipKey, mode string) (int64, error) {
+	return e.issueFor(ctx, u, t, ipKey, mode, e.cfg.Grant.TTL)
+}
+
+// issueFor is issue with an explicit lifetime, for the follow-on grant that
+// has to outlive the initial connect window.
+func (e *Engine) issueFor(ctx context.Context, u *store.User, t *store.Target, ipKey, mode string, ttl time.Duration) (int64, error) {
 	now := time.Now()
 
 	id, err := e.db.CreateGrant(ctx, store.Grant{
@@ -305,7 +313,7 @@ func (e *Engine) issue(ctx context.Context, u *store.User, t *store.Target, ipKe
 		SrcIP:     ipKey,
 		Mode:      mode,
 		CreatedAt: now,
-		ExpiresAt: now.Add(e.cfg.Grant.TTL),
+		ExpiresAt: now.Add(ttl),
 	}, "")
 	if err != nil {
 		return 0, fmt.Errorf("issue grant: %w", err)

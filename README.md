@@ -2,61 +2,59 @@
 
 # Revpd
 
-**MFA-Gateway für RDP mit Wake-on-LAN**
+**Reach your Windows PC over RDP from anywhere — safely.**
 
-Erreiche deinen Windows-PC von überall — mit der normalen
-Windows-Remotedesktopverbindung, ohne Zusatzsoftware auf dem Client, ohne dass
-der Rechner durchläuft, und ohne Port 3389 ungeschützt im Internet.
-
-[Installation](#installation) · [Verbinden](#verbinden) · [Wie es funktioniert](#wie-es-funktioniert) ·
-[Konfiguration](#konfiguration) · [Sicherheit](#sicherheit) · [Härtung](deploy/HARDENING.md)
+Your PC stays off until you need it. Port 3389 is never exposed unprotected.
+You connect with the Remote Desktop client that is already on every Windows
+machine — nothing to install on the client.
 
 </div>
 
 ```
-Du (mstsc)  ──►  Revpd  ──►  MFA  ──►  Wake-on-LAN  ──►  dein PC
+You (Remote Desktop)  →  Revpd  →  MFA  →  Wake-on-LAN  →  your PC
 ```
-
-Ein statisches Binary, rund 18 MB. Keine Laufzeitumgebung, keine Datenbank
-aufsetzen, keine Abhängigkeiten. Läuft ab etwa 30 MB Arbeitsspeicher.
 
 ---
 
-## Installation
+## What you can do with it
 
-Drei Wege. Der erste ist der richtige, wenn du nicht sicher bist.
+| | |
+|---|---|
+| **Connect from anywhere** | Type your password and one-time code into Remote Desktop. That is the whole login. |
+| **Leave the PC switched off** | Revpd wakes it with Wake-on-LAN when you connect, and waits while it boots. |
+| **Keep port 3389 safe** | No valid code, no connection. Not one byte reaches your PC without MFA. |
+| **Use any second factor** | Authenticator app, Duo push, passkey, or a printed backup code. |
+| **Manage it from a menu** | Type `revpd` and everything is a numbered choice. No flags to memorise. |
+| **Move to new hardware** | One encrypted backup file holds everything. Copy it over, restore, done. |
+| **See who did what** | A tamper-evident log. `revpd audit verify` proves nobody edited it. |
 
-### 1. Einzeiler auf Debian oder Ubuntu
+Everything is one file: a static binary, about 18 MB, no runtime to install and
+no database to set up.
+
+---
+
+## Install
+
+Pick whichever fits. The first is right if you are not sure.
+
+<details open>
+<summary><b>Debian or Ubuntu — one line</b></summary>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/plattnericus/revpd/main/install.sh | sudo bash
 ```
 
-Lädt die passende Version, **prüft die SHA-256-Summe**, legt einen
-System-Benutzer ohne Login an, erzeugt den Schlüssel, installiert einen
-gehärteten systemd-Dienst und führt dich durch den ersten Administrator samt
-QR-Code.
+Downloads the right build, checks its signature, creates a locked-down system
+account, generates your encryption key, installs a hardened service, and walks
+you through your first login with a QR code.
 
-Fehlende Werkzeuge wie `curl`, `tar` oder `coreutils` zieht es selbst nach —
-auf Debian, Ubuntu, Fedora, RHEL, Arch und Alpine. Erneutes Ausführen
-aktualisiert nur das Binary; Datenbank, Schlüssel und Konfiguration bleiben
-unangetastet.
+Missing tools like `curl` or `tar` are installed for you. Run it again any time
+to upgrade — your data, key and settings are never touched.
 
-<details>
-<summary>Unbeaufsichtigt oder mit fester Version</summary>
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/plattnericus/revpd/main/install.sh \
-  | sudo REVPD_NONINTERACTIVE=1 REVPD_HOSTNAME=gw.example.com bash
-```
-
-`REVPD_VERSION=v1.0.0` fixiert eine Version statt der neuesten.
 </details>
 
-### 2. Docker
-
-Für alles ohne systemd — Synology, unRAID, Proxmox-Container, macOS zum
-Ausprobieren.
+<details>
+<summary><b>Docker — for Synology, unRAID, Proxmox, anything without systemd</b></summary>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/plattnericus/revpd/main/docker-compose.yml -o docker-compose.yml
@@ -66,29 +64,14 @@ docker run --rm ghcr.io/plattnericus/revpd:latest genkey > .env
 docker compose up -d
 ```
 
-Oder in einem Aufruf, ohne Compose:
+> `network_mode: host` is required, not a shortcut. Wake-on-LAN works at the
+> network-card level, and from inside Docker's own network the wake-up signal
+> would never reach your PC.
 
-```bash
-docker run -d --name revpd \
-  --network host \
-  --cap-add NET_BIND_SERVICE \
-  --security-opt no-new-privileges \
-  -v revpd-data:/var/lib/revpd \
-  -v $PWD/revpd.yaml:/etc/revpd/revpd.yaml:ro \
-  --env-file .env \
-  --restart unless-stopped \
-  ghcr.io/plattnericus/revpd:latest
-```
+</details>
 
-> `--network host` ist kein Komfort, sondern nötig: Wake-on-LAN arbeitet auf
-> Layer 2, und aus Dockers Bridge käme das Magic Packet nie ins Netz.
-
-Das Image basiert auf *distroless* — keine Shell, kein Paketmanager, läuft als
-unprivilegierter Benutzer.
-
-### 3. Aus dem Quelltext
-
-Braucht Go 1.23+ und Node 20+.
+<details>
+<summary><b>From source — needs Go 1.23+ and Node 20+</b></summary>
 
 ```bash
 git clone https://github.com/plattnericus/revpd && cd revpd
@@ -96,168 +79,174 @@ cd web && npm ci && npm run build && cd ..
 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o revpd ./cmd/revpd
 ```
 
-Das Frontend wird über `embed.FS` ins Binary gelinkt — deshalb muss
-`npm run build` vor `go build` laufen.
+The web interface is compiled into the binary, so build it first.
+
+</details>
 
 ---
 
-## Nach der Installation
+## Set up
 
-Zielrechner eintragen — im Webinterface oder auf der Kommandozeile:
+**1. Add the PC you want to reach**
 
 ```bash
-sudo revpd targetadd -name "Büro-PC" -ip 192.168.1.40 \
-                     -mac a8:a1:59:3c:d2:11 -for felix
+sudo revpd target add "Office PC" 192.168.1.40 aa:bb:cc:dd:ee:ff --for felix
 ```
 
-Dann auf dem Router **genau zwei Ports** auf den Linux-Server weiterleiten:
+The MAC address is what wakes it. Any format works.
 
-| Port | Wofür |
+**2. Forward two ports on your router to this server**
+
+| Port | For |
 |---|---|
-| `3389` | Remotedesktopverbindung |
-| `8443` | Webinterface |
+| `3389` | Remote Desktop |
+| `8443` | web interface |
 
-Mehr nicht. Der Windows-PC selbst bleibt komplett dicht — die Regeln dafür
-stehen in [deploy/HARDENING.md](deploy/HARDENING.md).
+Nothing else. Your Windows PC itself stays completely closed —
+[the firewall rules are here](deploy/HARDENING.md).
 
-> Das Webinterface spricht **immer TLS**. Ohne konfiguriertes Zertifikat wird
-> beim Start ein selbstsigniertes erzeugt, statt auf HTTP zurückzufallen — ein
-> Sitzungs-Cookie darf nie im Klartext über die Leitung, und Passkeys
-> funktionieren ohnehin nur im Secure Context.
->
-> Wer auch 8443 nicht öffnen will, bindet es auf `127.0.0.1` und greift per
-> `ssh -L 8443:127.0.0.1:8443` darauf zu. Dann bleibt nur ein einziger Port.
+**3. On the Windows PC, turn off Fast Startup**
+
+```powershell
+powercfg /hibernate off
+```
+
+This is the single most common reason Wake-on-LAN appears not to work: with
+Fast Startup on, shutting down leaves the network card unpowered.
 
 ---
 
-## Verbinden
+## Connect
 
-1. Windows-Remotedesktopverbindung öffnen
-2. Als Computer die Adresse des Gateways eintragen, z. B. `gw.example.com`
-3. Benutzername wie gewohnt
-4. **Ins Passwortfeld: Passwort, Komma, Code**
+1. Open **Remote Desktop**
+2. Computer: your gateway, e.g. `gw.example.com`
+3. Username: as usual
+4. **Password field: your password, a comma, then your code**
 
 ```
-MeinPasswort,123456        Einmalcode aus der Authenticator-App
-MeinPasswort,push          Freigabe per Push aufs Handy (Duo)
-MeinPasswort,K7RM2-9XQPD   Backup-Code
+MyPassword,123456        code from your authenticator app
+MyPassword,push          approve on your phone (needs Duo)
+MyPassword,K7RM2-9XQPD   backup code
 ```
 
-Revpd prüft beides, weckt den Rechner und leitet dich automatisch weiter. Du
-tippst genau einmal. Läuft der Rechner noch nicht, dauert der erste Versuch so
-lange wie der Bootvorgang.
+Revpd checks both, wakes your PC, waits for it, and connects you
+automatically. **You type once.**
 
-Ein Komma im Passwort ist kein Problem — getrennt wird am **letzten**.
+If the PC was off, the first attempt takes as long as it takes to boot.
+
+> A comma in your password is fine — only the last one counts.
 
 ---
 
-## Wie es funktioniert
+## Manage it
 
-RDP kennt keinen eigenen Dialog für Einmalcodes. Revpd nimmt die Verbindung
-deshalb selbst an und nutzt zwei Mechanismen, die im Protokoll vorgesehen sind:
+Type `revpd` for a menu, or use commands directly.
 
-**1. Die Anmeldedaten kommen lesbar an.** Verhandelt das Gateway
-`PROTOCOL_SSL` statt `HYBRID`, läuft die Verbindung über TLS ohne NLA. Der
-Client schickt Benutzername und Passwort dann im Client Info PDU — innerhalb
-des TLS-Tunnels.
+```
+revpd                          open the menu
+revpd status                   is it running, how many users and machines
 
-**2. Die Weiterleitung macht der Client selbst.** Nach bestandener MFA
-antwortet Revpd mit einem [Server Redirection PDU](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/df3d59e6-30a8-4a36-bd2d-9d11bcd96c3e).
-`mstsc` verbindet sich daraufhin von allein neu und trägt ein Einmal-Token mit.
-Derselbe Mechanismus trägt sonst die Lastverteilung in Windows-Farmen.
+revpd user add NAME --admin    create an account
+revpd user list
+revpd user rm NAME
+revpd user reset NAME          new QR code and backup codes
+revpd user lock NAME           lock someone out immediately
 
-Ab der Weiterleitung fasst Revpd den Datenstrom **nicht mehr an**. Es kopiert
-nur Bytes.
+revpd target add NAME IP MAC --for USER
+revpd target list
+revpd target rm NAME
 
-> **Deshalb bleiben NLA, Zwischenablage, Multi-Monitor, Audio und
-> Laufwerks-Umleitung vollständig erhalten.** Die Verschlüsselung der Sitzung
-> läuft Ende-zu-Ende zwischen deinem Client und dem echten Windows-Rechner.
+revpd service restart          start, stop, restart, status
+revpd logs -f                  watch what it is doing
 
-**Die eine Regel:** Ohne bestandene MFA wird kein einziges Byte weitergeleitet.
+revpd backup                   everything in one encrypted file
+revpd restore FILE
+
+revpd audit verify             prove the log was not tampered with
+revpd uninstall                remove it completely
+```
+
+### The web interface
+
+`https://your-gateway:8443` — the first visit walks you through creating your
+account and scanning a QR code. After that: machines, users, access, the
+activity log, and a wake button as a fallback.
+
+Ten languages, light and dark, works on a phone.
 
 ---
 
-## Konfiguration
-
-Zwei Dateien.
-
-| Datei | Inhalt |
-|---|---|
-| `/etc/revpd/revpd.yaml` | Verhalten: Ports, Zeiten, Limits |
-| `/etc/revpd/.env` | Geheimnisse: Master-Key, Duo-Zugangsdaten |
-
-Die Umgebung sticht die Datei. Alles steht kommentiert in
-[`.env.example`](.env.example) und
-[`deploy/revpd.example.yaml`](deploy/revpd.example.yaml).
-
-```yaml
-web:
-  hostname: gw.example.com     # was Nutzer eintippen; zugleich die Passkey-Kennung
-  tls_cert: /etc/revpd/tls/fullchain.pem
-  tls_key:  /etc/revpd/tls/privkey.pem
-
-rdp_login:
-  enabled: true                # Anmeldung direkt in der Remotedesktopverbindung
-
-grant:
-  ttl: 2m                      # wie lange eine bestandene MFA zum Verbinden reicht
-  reuse_window: 10m            # Reconnect nach Netzabbruch ohne neue MFA
-```
-
-Ein Tippfehler in einem Schlüssel lässt den Start fehlschlagen, statt still
-ignoriert zu werden — bei Sicherheitseinstellungen ist das Absicht.
-
-### Kommandos
+## Backups
 
 ```bash
-revpd useradd -u felix -admin        # Konto anlegen
-revpd enroll  -u felix               # QR-Code und Backup-Codes
-revpd targetadd -name … -ip … -mac … # Zielrechner
-revpd audit verify                   # Protokoll auf Manipulation prüfen
-journalctl -u revpd -f               # Logs
+sudo revpd backup
 ```
 
+One encrypted file with your database, your encryption key and your settings.
+Move it to a new machine and restore:
+
+```bash
+scp revpd-gw-2026-07-24.revpd-backup user@new-server:
+ssh user@new-server sudo revpd restore revpd-gw-2026-07-24.revpd-backup
+```
+
+Everyone's second factors keep working, because the key travels with it.
+
+> The file is encrypted with a passphrase you choose. There is no way to
+> recover that passphrase, and no way to read the backup without it.
+
 ---
 
-## Webinterface
+## How it works
 
-Erreichbar unter `https://<hostname>:8443`. Beim ersten Aufruf führt ein
-Assistent in vier Schritten durch Administrator, zweiten Faktor mit QR-Code,
-ersten Zielrechner und Abschluss.
+Remote Desktop has no box to type a one-time code into. So Revpd answers the
+connection itself and uses two things the protocol already provides:
 
-Danach: Zielrechner, Benutzer, Freigaben, Protokoll und ein Wecken-Knopf als
-Notfallweg. In zehn Sprachen, hell und dunkel, auch auf dem Handy.
+**Your login arrives readable.** By choosing TLS instead of NLA for the first
+hop, your username and password arrive inside the encrypted tunnel where the
+gateway can check them.
+
+**Your client redirects itself.** Once your code checks out, Revpd replies with
+a [Server Redirection](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/df3d59e6-30a8-4a36-bd2d-9d11bcd96c3e)
+— the same mechanism Windows server farms use for load balancing. Your client
+reconnects on its own, carrying a token that works exactly once.
+
+After that Revpd stops looking at the traffic entirely and just copies bytes.
+
+> **That is why nothing is lost.** NLA, clipboard, multiple monitors, audio and
+> drive redirection all keep working, encrypted end to end between your client
+> and your actual PC.
+
+**The one rule:** without a passed MFA check, not a single byte is forwarded.
 
 ---
 
-## Sicherheit
+## Security
 
-| Bereich | Umsetzung |
+| | |
 |---|---|
-| Passwörter | Argon2id, 64 MiB, t=3, p=4 |
-| TOTP | RFC 6238 mit **Replay-Schutz** — ein benutzter Code ist verbraucht |
-| Passkeys | WebAuthn Level 2, ES256 und RS256, Klon-Erkennung über den Zähler |
-| Duo | Auth API v2, HMAC-SHA1-signiert, asynchrones Push |
-| Backup-Codes | einmalig, Argon2id-gehasht |
-| Geheimnisse | AES-256-GCM, Schlüssel nur aus der Umgebung |
-| Weiterleitungs-Token | einmalig einlösbar, an die Quell-IP gebunden, 60 s gültig |
-| Freigaben | IP-gebunden, kurzlebig, jederzeit widerrufbar |
-| Brute Force | progressive Sperre je Konto und je IP, Tarpit auf 3389 |
-| Protokoll | hash-verkettet und nur anfügbar |
-| Prozess | läuft nicht als root, `CAP_NET_BIND_SERVICE` statt Vollzugriff |
-| Fehlermeldungen | falsches Passwort, unbekanntes Konto und falscher Code sind von außen nicht unterscheidbar |
+| Passwords | Argon2id (64 MiB, t=3, p=4) |
+| One-time codes | RFC 6238, and a used code is dead — even if two logins race |
+| Passkeys | WebAuthn Level 2, phishing-resistant, clone detection |
+| Duo | Auth API v2, HMAC-signed |
+| Secrets at rest | AES-256-GCM, key only ever from the environment |
+| Redirect tokens | single use, tied to your address, valid 60 seconds |
+| Brute force | escalating lockout per account and per address, tarpit on 3389 |
+| The log | hash-chained and append-only |
+| The process | never runs as root |
+| Error messages | wrong password, unknown account and wrong code are indistinguishable |
 
-Passwörter erscheinen **nie** in Logs, Fehlermeldungen oder im Protokoll — ein
-Test prüft das gegen den kompletten Audit-Trail.
+Your password never appears in a log, an error, or the audit trail — there is a
+test that reads the entire trail to prove it.
 
 ```bash
 revpd audit verify
 ```
 
-Jeder Eintrag enthält den Hash seines Vorgängers. Wird eine Zeile geändert oder
-gelöscht, nennt der Befehl die betroffene Stelle.
+Each entry carries the hash of the one before it. Change or delete a line and
+this tells you exactly where.
 
-Firewall-Regeln, Windows-seitige Einschränkung, fail2ban und Backups stehen in
+Firewall rules, locking down the Windows side, fail2ban and backups:
 **[deploy/HARDENING.md](deploy/HARDENING.md)**.
 
 ---
@@ -265,48 +254,46 @@ Firewall-Regeln, Windows-seitige Einschränkung, fail2ban und Backups stehen in
 ## Tests
 
 ```bash
-go test ./... -cover                              # Unit-Tests
-go test ./test/integration -tags=integration -v   # komplette Kette
-go test ./internal/proxy/x224 -fuzz=FuzzRead      # Parser gegen Zufallseingaben
-cd web && npm run test:i18n                       # Übersetzungen vollständig
+go test ./...                                     # unit tests
+go test ./test/integration -tags=integration -v   # 78 end-to-end tests
+go test ./internal/proxy/x224 -fuzz=FuzzRead      # parsers against random input
 ```
 
-Der Integrationstest fährt den echten Ablauf durch: schlafender Rechner,
-Passwort mit angehängtem Code, verifiziertes Magic Packet auf dem Draht,
-Bootvorgang, byte-genauer RDP-Strom. Er prüft außerdem, dass ohne Freigabe, mit
-abgelaufener Freigabe, von fremder IP, bei gesperrtem Konto, mit
-wiederverwendetem Code und nach entzogener Berechtigung wirklich **null Bytes**
-durchkommen.
+The integration suite runs the real thing: a sleeping PC, a real password with
+a real code appended, a verified wake-up signal on the wire, a real boot, and a
+byte-exact RDP stream at the end.
 
-Die Parser sehen die offene Welt vor jeder Authentifizierung und laufen deshalb
-unter `go-fuzz`.
-
----
-
-## Voraussetzungen am Zielrechner
-
-- WoL im BIOS/UEFI aktivieren
-- Netzwerkadapter: *Gerät kann den Computer aus dem Ruhezustand aktivieren*
-- **Windows-Schnellstart deaktivieren** (`powercfg /hibernate off`) — mit
-  Abstand die häufigste Ursache, wenn WoL scheinbar nicht funktioniert
-- NLA eingeschaltet lassen
-
-Wake-on-LAN arbeitet auf Layer 2. Über Subnetzgrenzen muss der Router Directed
-Broadcast erlauben.
+It also tries to break in — replaying tokens, racing two logins with one code,
+holding connections open, and probing whether the responses reveal which
+accounts exist. Every parser that faces the internet before authentication runs
+under fuzzing.
 
 ---
 
-## Stand
+## Requirements on the Windows PC
 
-Einsatzbereit: RDP-nativer Login, transparenter Relay, Wake-on-LAN, TOTP, Duo,
-Passkeys, Webinterface, Setup-Assistent, Installer und Härtungsleitfaden.
+- Wake-on-LAN enabled in BIOS/UEFI
+- Network adapter: *Allow this device to wake the computer*
+- **Fast Startup off** (`powercfg /hibernate off`)
+- Leave NLA on
 
-Das RD-Gateway auf 443 (für Netze, in denen 3389 gar nicht nach außen darf) ist
-zur Hälfte fertig: der Protokollkern steht und ist getestet, die
-Transportschicht fehlt noch.
+Wake-on-LAN works at the network-card level, so across subnets your router
+needs to allow directed broadcast.
 
 ---
 
-## Lizenz
+## Status
+
+Ready to use: RDP login, transparent relay, Wake-on-LAN, authenticator apps,
+Duo, passkeys, web interface, setup wizard, installer, backups and the
+management menu.
+
+The RD Gateway on 443 (for networks where 3389 cannot be opened at all) is half
+finished — the protocol works and is tested, the transport layer is not written
+yet.
+
+---
+
+## Licence
 
 MIT
