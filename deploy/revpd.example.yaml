@@ -161,3 +161,32 @@ rdgw:
   enabled: false
   listen: ":443"
   token_ttl: 5m
+
+
+update:
+  # Ask GitHub every few hours whether a newer release exists. One API call,
+  # nothing is downloaded, and the dashboard shows what it found.
+  enabled: true
+
+  # Where releases come from. Empty derives it from the repository this was
+  # built from, so a fork updates from the fork with nothing to configure.
+  repo: ""
+
+  # Download and install without being asked. Off by default because
+  # installing restarts the service, which drops every live RDP session.
+  #
+  # This is the starting value only: the toggle in the dashboard overrides it
+  # once an administrator has used it.
+  auto_install: false
+
+  # Wait for nobody to be connected before an automatic install. Without this
+  # an update can cut a remote desktop session mid-sentence.
+  only_when_idle: true
+
+  # Accept release candidates. GitHub's "latest release" skips them, so this
+  # changes which release is considered at all.
+  prerelease: false
+
+  # Below 15m GitHub's anonymous rate limit (60 calls an hour per address)
+  # runs out, and the config is rejected.
+  check_interval: 6h

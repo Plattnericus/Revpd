@@ -49,7 +49,9 @@ account, generates your encryption key, installs a hardened service, and walks
 you through your first login with a QR code.
 
 Missing tools like `curl` or `tar` are installed for you. Run it again any time
-to upgrade — your data, key and settings are never touched.
+to upgrade — your data, key and settings are never touched. After the first
+install you can update from the web interface instead; see
+[Staying current](#staying-current).
 
 </details>
 
@@ -80,6 +82,37 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o revpd ./cmd/revpd
 ```
 
 The web interface is compiled into the binary, so build it first.
+
+Pass the version in if you want `revpd update` to be able to order this build
+against published releases — without it the binary reports `dev`, and the
+updater refuses to compare (and so to replace) a build somebody made by hand:
+
+```bash
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=1.2.3" -o revpd ./cmd/revpd
+```
+
+</details>
+
+<details>
+<summary><b>Publishing a release — for maintainers</b></summary>
+
+The installer and the built-in updater both download the files attached to a
+GitHub release. A tag with no files attached is not installable, so releases are
+built by CI rather than created by hand:
+
+```bash
+git tag v1.2.3 && git push origin v1.2.3
+```
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds the web
+interface, compiles for linux/amd64 and linux/arm64, packages
+`revpd_<version>_linux_<arch>.tar.gz` plus `checksums.txt`, checks that the
+archive unpacks to a binary reporting the expected version, and attaches
+everything to the release.
+
+If a release was already created in the web interface without artefacts, run the
+workflow by hand from the Actions tab and give it the existing tag — it attaches
+the files to what is already there.
 
 </details>
 
@@ -173,6 +206,43 @@ account and scanning a QR code. After that: machines, users, access, the
 activity log, and a wake button as a fallback.
 
 Ten languages, light and dark, works on a phone.
+
+---
+
+## Staying current
+
+Revpd checks GitHub for a newer release every few hours and shows what it finds
+on the overview page. Nothing is downloaded until somebody asks for it.
+
+**From the web interface.** When a release is available a panel appears at the
+top of the overview with the version and what changed. Press *Install now* and
+it downloads the build for this machine, checks it against the checksums
+published with the release, replaces the binary and restarts. If the new
+version does not come back up, the previous one is put back automatically and
+the panel says why.
+
+**Automatically.** Settings → Update has a switch. With it on, new releases
+install themselves, and by default they wait until nobody is connected — an
+update means a restart, and a restart drops any open remote desktop session.
+The starting value comes from `update.auto_install` in `revpd.yaml`; the switch
+overrides it from then on.
+
+**From the terminal.**
+
+```bash
+revpd update                  # is there a newer release?
+sudo revpd update install     # download, verify, install, confirm it came back
+sudo revpd update rollback    # go back to the version before the last update
+```
+
+Installing needs root, because the service itself runs unprivileged with `/usr`
+mounted read-only and cannot replace its own binary. `install.sh` sets up a
+small root-owned unit for exactly that hand-off, which is what makes the button
+in the web interface work. Without it, downloads still happen and the interface
+says so, but installing has to be done from the command line.
+
+Configuration lives under `update:` in
+[`deploy/revpd.example.yaml`](deploy/revpd.example.yaml).
 
 ---
 

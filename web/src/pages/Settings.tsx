@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Card, Field, SectionTitle, Badge } from '../components/ui'
+import { UpdatePanel, useUpdateStatus } from '../components/UpdateCard'
 import { api, toSettings } from '../lib/api'
 import { useT } from '../lib/lang'
 import type { Settings as S } from '../lib/types'
@@ -11,6 +12,7 @@ import type { Settings as S } from '../lib/types'
 */
 export function Settings() {
   const t = useT()
+  const updates = useUpdateStatus()
   const [s, setS] = useState<S | null>(null)
   const [error, setError] = useState('')
 
@@ -32,6 +34,11 @@ export function Settings() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* The one panel here that is not read-only: the automatic-update
+          switch is an operator preference rather than a deployment decision,
+          so it is stored alongside the accounts instead of in the file. */}
+      <UpdatePanel ctl={updates} />
+
       <Card>
         <SectionTitle>{t('settings.gateway')}</SectionTitle>
         <Field label={t('settings.hostname')} value={s.hostname} mono readOnly />

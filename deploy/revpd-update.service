@@ -1,0 +1,33 @@
+[Unit]
+Description=Install the staged Revpd update
+Documentation=https://github.com/plattnericus/revpd
+
+# Networking is not needed: the archive was downloaded and verified before this
+# ever runs. All that is left is replacing the binary and restarting.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/revpd update apply-staged
+
+# It replaces /usr/local/bin/revpd and restarts revpd.service, so it runs as
+# root. It is still worth confining to the two directories it touches.
+User=root
+ReadWritePaths=/usr/local/bin /var/lib/revpd
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+# The applier waits for the restarted service to stay up before it declares
+# success, and rolls back if it does not. That wait has to fit inside this.
+TimeoutStartSec=300
+
+# One line per step, so `journalctl -u revpd-update` reads as the story of what
+# happened to the binary.
+StandardOutput=journal
+StandardError=journal

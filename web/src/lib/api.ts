@@ -156,6 +156,19 @@ export const api = {
 
   settings: () => get<ApiSettings>('/api/admin/settings'),
 
+  /* --------------------------------------------------------- updates --- */
+
+  updateStatus: () => get<ApiUpdate>('/api/update'),
+
+  updateCheck: () => post<ApiUpdate>('/api/admin/update/check'),
+
+  /** Starts the download. Progress arrives through updateStatus polling. */
+  updateInstall: (version?: string) =>
+    post<ApiUpdate>('/api/admin/update/install', version ? { version } : undefined),
+
+  updateAuto: (autoInstall: boolean) =>
+    post<ApiUpdate>('/api/admin/update/settings', { auto_install: autoInstall }),
+
   /* -------------------------------------------------------- activity --- */
 
   sessions: () => get<{ sessions: ApiSession[] }>('/api/sessions'),
@@ -208,6 +221,42 @@ export interface ApiAudit {
   object: string
   src_ip: string
   detail: Record<string, unknown>
+}
+
+export type UpdatePhase = 'idle' | 'checking' | 'downloading' | 'verifying' | 'staged' | 'applying' | 'failed'
+
+export interface ApiUpdate {
+  supported: boolean
+  reason?: string
+  current: string
+  repo?: string
+  phase?: UpdatePhase
+  auto_install?: boolean
+  check_enabled?: boolean
+  prerelease?: boolean
+  /** False when the privileged half is missing: downloads work, installs do not. */
+  can_install?: boolean
+  last_check?: string
+  error?: string
+  error_reason?: string
+  available?: {
+    version: string
+    notes: string
+    url: string
+    published_at: string
+    prerelease: boolean
+    size: number
+  }
+  staged?: { version: string; staged_at: string }
+  progress?: { downloaded: number; total: number }
+  last_result?: {
+    version: string
+    from: string
+    ok: boolean
+    message: string
+    rolled_back: boolean
+    at: string
+  }
 }
 
 export interface ApiSettings {

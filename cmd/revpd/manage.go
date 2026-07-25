@@ -20,8 +20,8 @@ import (
 )
 
 /*
-   Where the installer puts things. One place, so the menu, the backup and the
-   uninstaller cannot drift apart from install.sh.
+Where the installer puts things. One place, so the menu, the backup and the
+uninstaller cannot drift apart from install.sh.
 */
 const (
 	installBinPath = "/usr/local/bin/revpd"
@@ -30,6 +30,11 @@ const (
 	installService = "/etc/systemd/system/revpd.service"
 	installUnit    = "revpd"
 	installUser    = "revpd"
+
+	// The privileged half of self-updating: a path unit watching for a
+	// request, and the oneshot service it starts.
+	installUpdatePath    = "/etc/systemd/system/revpd-update.path"
+	installUpdateService = "/etc/systemd/system/revpd-update.service"
 )
 
 /* ---------------------------------------------------------------- users --- */
@@ -732,7 +737,10 @@ func uninstallPlan(dataDir string, keepData bool) ([]removalStep, error) {
 	steps := []removalStep{
 		{Description: "stop the service", Command: []string{"systemctl", "stop", installUnit}},
 		{Description: "disable the service", Command: []string{"systemctl", "disable", installUnit}},
+		{Description: "stop watching for updates", Command: []string{"systemctl", "disable", "--now", installUnit + "-update.path"}},
 		{Description: "remove the service definition", Path: installService},
+		{Description: "remove the updater definitions", Path: installUpdatePath},
+		{Description: "remove the updater service", Path: installUpdateService},
 		{Description: "reload systemd", Command: []string{"systemctl", "daemon-reload"}},
 		{Description: "clear any failed state", Command: []string{"systemctl", "reset-failed", installUnit}},
 	}

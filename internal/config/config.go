@@ -19,9 +19,10 @@ type Config struct {
 	Grant    Grant    `yaml:"grant"`
 	RDPLogin RDPLogin `yaml:"rdp_login"`
 	JIT      JIT      `yaml:"jit"`
-	WoL   WoL   `yaml:"wol"`
-	Auth  Auth  `yaml:"auth"`
-	RDGW  RDGW  `yaml:"rdgw"`
+	WoL      WoL      `yaml:"wol"`
+	Auth     Auth     `yaml:"auth"`
+	RDGW     RDGW     `yaml:"rdgw"`
+	Update   Update   `yaml:"update"`
 }
 
 type Web struct {
@@ -136,6 +137,36 @@ type RDGW struct {
 	TokenTTL time.Duration `yaml:"token_ttl"`
 }
 
+// Update controls how the gateway keeps itself current.
+//
+// Checking is on by default and costs one API call every few hours. Installing
+// is not: a restart drops every live RDP session, so it stays something an
+// administrator turns on knowingly — in the dashboard or here.
+type Update struct {
+	// Enabled turns the periodic check on. Off means the dashboard only ever
+	// looks when somebody presses the button.
+	Enabled bool `yaml:"enabled"`
+
+	// Repo is owner/name. Empty derives it from the module this was built
+	// from, so a fork updates from the fork with nothing to configure.
+	Repo string `yaml:"repo"`
+
+	// AutoInstall downloads and installs a new release without being asked.
+	// The dashboard toggle overrides this once it has been used; this is the
+	// value a fresh installation starts from.
+	AutoInstall bool `yaml:"auto_install"`
+
+	// Prerelease accepts release candidates. GitHub's "latest release" skips
+	// them, so this changes which release is even considered.
+	Prerelease bool `yaml:"prerelease"`
+
+	CheckInterval time.Duration `yaml:"check_interval"`
+
+	// OnlyWhenIdle holds an automatic install back while somebody is connected.
+	// Without it an update would cut a live remote desktop session mid-sentence.
+	OnlyWhenIdle bool `yaml:"only_when_idle"`
+}
+
 // Defaults returns a config that is safe to run as-is apart from hostname and TLS.
 func Defaults() Config {
 	return Config{
@@ -189,6 +220,13 @@ func Defaults() Config {
 			Enabled:  false,
 			Listen:   ":443",
 			TokenTTL: 5 * time.Minute,
+		},
+		Update: Update{
+			Enabled:       true,
+			AutoInstall:   false, // installing restarts the service; opt in first
+			Prerelease:    false,
+			CheckInterval: 6 * time.Hour,
+			OnlyWhenIdle:  true,
 		},
 	}
 }
@@ -251,6 +289,12 @@ func (c *Config) applyEnv() {
 	boolean("REVPD_JIT_ENABLED", &c.JIT.Enabled)
 	dur("REVPD_JIT_HOLD_TIMEOUT", &c.JIT.HoldTimeout)
 	boolean("REVPD_RDGW_ENABLED", &c.RDGW.Enabled)
+	boolean("REVPD_UPDATE_ENABLED", &c.Update.Enabled)
+	boolean("REVPD_UPDATE_AUTO_INSTALL", &c.Update.AutoInstall)
+	boolean("REVPD_UPDATE_PRERELEASE", &c.Update.Prerelease)
+	boolean("REVPD_UPDATE_ONLY_WHEN_IDLE", &c.Update.OnlyWhenIdle)
+	str("REVPD_UPDATE_REPO", &c.Update.Repo)
+	dur("REVPD_UPDATE_CHECK_INTERVAL", &c.Update.CheckInterval)
 
 	if v := os.Getenv("REVPD_TRUSTED_PROXIES"); v != "" {
 		c.Web.TrustedProxies = nil
@@ -354,6 +398,15 @@ func (c Config) Validate() error {
 	}
 	if c.Auth.BackupCodes < 0 || c.Auth.BackupCodes > 50 {
 		problems = append(problems, "auth.backup_codes must be between 0 and 50")
+	}
+	if c.Update.Enabled && c.Update.CheckInterval < 15*time.Minute {
+		// GitHub allows 60 anonymous API calls an hour per address. Checking
+		// more often than this burns the budget for no benefit — releases do
+		// not appear by the minute.
+		problems = append(problems, "update.check_interval below 15m will exhaust GitHub's rate limit")
+	}
+	if c.Update.Repo != "" && strings.Count(c.Update.Repo, "/") != 1 {
+		problems = append(problems, fmt.Sprintf("update.repo %q must be in owner/name form", c.Update.Repo))
 	}
 
 	if len(problems) > 0 {

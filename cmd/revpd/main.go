@@ -28,6 +28,7 @@ import (
 	"github.com/plattnericus/revpd/internal/proxy/rdp"
 	"github.com/plattnericus/revpd/internal/proxy/relay"
 	"github.com/plattnericus/revpd/internal/store"
+	"github.com/plattnericus/revpd/internal/update"
 	"github.com/plattnericus/revpd/internal/web"
 )
 
@@ -78,6 +79,8 @@ func run() error {
 		return cmdConfig(os.Args[2:])
 	case "doctor", "check":
 		return cmdDoctor()
+	case "update", "upgrade":
+		return cmdUpdate(os.Args[2:])
 	case "backup":
 		return cmdBackup(os.Args[2:])
 	case "restore":
@@ -155,6 +158,11 @@ Running it
 History
   revpd audit                      what has happened
   revpd audit verify               prove the log was not tampered with
+
+Keeping it current
+  revpd update                     is there a newer release?
+  revpd update install [VERSION]   download, verify and install it
+  revpd update rollback            go back to the previous version
 
 Moving and removing
   revpd backup [FILE]              everything in one encrypted file
@@ -261,8 +269,21 @@ func cmdServe(args []string) error {
 	errs := make(chan error, 2)
 	go func() { errs <- relaySrv.Serve(ctx) }()
 
+	// Self-update. The manager is created even when periodic checks are off,
+	// so the button in the dashboard still works; only the timer is gated.
+	updater, err := update.NewManager(update.Options{
+		DataDir: cfg.DataDir,
+		Version: version,
+		Repo:    cfg.Update.Repo,
+	})
+	if err != nil {
+		// Not fatal: a gateway that cannot update itself still gateways.
+		slog.Warn("the updater is unavailable", "err", err)
+	}
+
 	// Web portal.
-	apiSrv := api.New(db, log, cfg, authMgr, engine, sealer, web.Handler())
+	apiSrv := api.New(db, log, cfg, authMgr, engine, sealer, web.Handler()).
+		WithUpdates(updater, version)
 	httpSrv := &http.Server{
 		Addr:              cfg.Web.Listen,
 		Handler:           apiSrv.Handler(),
@@ -299,6 +320,7 @@ func cmdServe(args []string) error {
 	}()
 
 	go housekeeping(ctx, db, authMgr, cfg)
+	go apiSrv.RunAutoUpdate(ctx)
 
 	slog.Info("revpd running",
 		"version", version,

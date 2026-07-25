@@ -1,0 +1,15 @@
+[Unit]
+Description=Watch for a Revpd update waiting to be installed
+Documentation=https://github.com/plattnericus/revpd
+
+# The gateway runs unprivileged and with /usr mounted read-only, so it cannot
+# replace its own binary. Instead it downloads a release, verifies it against
+# the checksums published with it, and drops a request here. This unit notices
+# and starts the part that needs root.
+
+[Path]
+PathExists=/var/lib/revpd/update/apply.request
+Unit=revpd-update.service
+
+[Install]
+WantedBy=multi-user.target

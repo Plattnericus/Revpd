@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Clock, Copy, Download, Monitor, Power, TriangleAlert } from 'lucide-react'
 import { Button, Card, Dot, EmptyState, ProgressRing, spring } from '../components/ui'
+import { UpdateBanner, useUpdateStatus } from '../components/UpdateCard'
 import { api, subscribeTargets, toTarget } from '../lib/api'
 import { duration } from '../lib/format'
 import { useT } from '../lib/lang'
@@ -14,6 +15,7 @@ import type { Target } from '../lib/types'
 */
 export function Dashboard() {
   const t = useT()
+  const updates = useUpdateStatus()
 
   const [targets, setTargets] = useState<Target[] | null>(null)
   const [gateway, setGateway] = useState('')
@@ -77,11 +79,20 @@ export function Dashboard() {
   }
 
   if (targets === null) {
-    return <div className="h-24" /> // brief, so a spinner would only flash
+    // Brief, so a spinner would only flash — but an update that is mid-install
+    // has to stay on screen while the machine list reloads behind it.
+    return (
+      <div className="flex flex-col gap-4">
+        <UpdateBanner ctl={updates} />
+        <div className="h-24" />
+      </div>
+    )
   }
 
   return (
     <div className="flex flex-col gap-4">
+      <UpdateBanner ctl={updates} />
+
       {error && (
         <div
           className="flex items-center gap-2 rounded-[10px] px-3 py-2 text-[13px]"

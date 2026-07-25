@@ -20,6 +20,7 @@ import (
 	"github.com/plattnericus/revpd/internal/mfa"
 	"github.com/plattnericus/revpd/internal/policy"
 	"github.com/plattnericus/revpd/internal/store"
+	"github.com/plattnericus/revpd/internal/update"
 )
 
 type Server struct {
@@ -31,6 +32,11 @@ type Server struct {
 	sealer *crypto.Sealer
 
 	challenges *challengeStore
+
+	// updates is nil where the binary cannot replace itself — in a container,
+	// or when the operator turned it off.
+	updates *update.Manager
+	version string
 
 	assets http.Handler
 }
@@ -87,6 +93,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/admin/targets", s.admin(s.handleCreateTarget))
 	mux.Handle("POST /api/admin/targets/{id}/testwol", s.admin(s.handleTestWoL))
 	mux.Handle("GET /api/admin/settings", s.admin(s.handleSettings))
+
+	// Updates. Reading the status is enough to draw the banner; everything
+	// that downloads or installs is an administrator's decision.
+	mux.Handle("GET /api/update", s.authed(s.handleUpdateStatus))
+	mux.Handle("POST /api/admin/update/check", s.admin(s.handleUpdateCheck))
+	mux.Handle("POST /api/admin/update/install", s.admin(s.handleUpdateInstall))
+	mux.Handle("POST /api/admin/update/settings", s.admin(s.handleUpdateSettings))
 
 	if s.assets != nil {
 		mux.Handle("/", s.assets)

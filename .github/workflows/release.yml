@@ -1,0 +1,158 @@
+name: release
+
+# Publishes the artefacts install.sh downloads.
+#
+# Without this, `releases/latest` either 404s (no release at all) or resolves to
+# a tag with no files attached, and the installer fails at the download step —
+# which is exactly what happened for v1.0.001.
+#
+# Runs on a pushed tag, and can be pointed at an existing tag by hand from the
+# Actions tab when a release was created in the web UI without artefacts.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and attach artefacts to (e.g. v1.0.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve the tag
+        id: tag
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::tag '$tag' must start with 'v'"; exit 1 ;;
+          esac
+          {
+            echo "tag=$tag"
+            # install.sh builds the filename from the tag with the leading v
+            # stripped. Both sides derive it the same way so they cannot drift.
+            echo "version=${tag#v}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the web interface
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Check the frontend landed where the binary embeds it from
+        run: |
+          # go:embed fails with a confusing error when this is missing, so say
+          # it plainly here instead.
+          test -f internal/web/dist/index.html \
+            || { echo "::error::web build produced no internal/web/dist/index.html"; exit 1; }
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build and package
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+
+          for arch in amd64 arm64; do
+            echo "==> linux/$arch"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+              -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "release/stage/revpd" ./cmd/revpd
+
+            install -m 0644 README.md release/stage/README.md
+
+            # The installer looks for exactly this name and expects revpd at the
+            # root of the archive.
+            tar -czf "release/revpd_${VERSION}_linux_${arch}.tar.gz" \
+                -C release/stage revpd README.md
+            rm -rf release/stage
+          done
+
+          cd release
+          sha256sum ./*.tar.gz | sed 's| \./| |' > checksums.txt
+          echo "--- artefacts ---"
+          cat checksums.txt
+
+      - name: Verify the archives are what the installer expects
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum -c checksums.txt
+
+          # Unpack the way install.sh does and run it, so a broken archive is
+          # caught here rather than on someone's server.
+          tmp=$(mktemp -d)
+          tar -xzf "revpd_${VERSION}_linux_amd64.tar.gz" -C "$tmp"
+          test -x "$tmp/revpd" || { echo "::error::archive has no executable revpd"; exit 1; }
+
+          got=$("$tmp/revpd" version)
+          echo "binary reports: $got"
+          test "$got" = "revpd ${VERSION}" \
+            || { echo "::error::binary reports '$got', expected 'revpd ${VERSION}'"; exit 1; }
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # A release may already exist — created in the web UI, or by a rerun.
+          # Create it only if it does not, then attach the files either way.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists, attaching artefacts"
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+
+          gh release upload "$TAG" release/*.tar.gz release/checksums.txt --clobber
+
+          # A draft is invisible to releases/latest, so the installer would keep
+          # 404ing with the release sitting right there.
+          gh release edit "$TAG" --draft=false
+
+      - name: Confirm the installer can now resolve it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          names=$(gh release view "$TAG" --json assets --jq '.assets[].name' | sort)
+          echo "$names"
+          for want in \
+              "revpd_${{ steps.tag.outputs.version }}_linux_amd64.tar.gz" \
+              "revpd_${{ steps.tag.outputs.version }}_linux_arm64.tar.gz" \
+              "checksums.txt"; do
+            grep -qx "$want" <<<"$names" \
+              || { echo "::error::$want is missing from the release"; exit 1; }
+          done
