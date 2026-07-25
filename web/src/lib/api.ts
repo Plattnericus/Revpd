@@ -246,6 +246,8 @@ export interface ApiUpdate {
     published_at: string
     prerelease: boolean
     size: number
+    /** False while the release exists but its build has not been attached yet. */
+    asset_ready: boolean
   }
   staged?: { version: string; staged_at: string }
   progress?: { downloaded: number; total: number }

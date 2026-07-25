@@ -3,13 +3,21 @@ name: release
 # Publishes the artefacts install.sh downloads.
 #
 # Without this, `releases/latest` either 404s (no release at all) or resolves to
-# a tag with no files attached, and the installer fails at the download step —
-# which is exactly what happened for v1.0.001.
+# a tag with no files attached, and the installer fails at the download step.
 #
-# Runs on a pushed tag, and can be pointed at an existing tag by hand from the
-# Actions tab when a release was created in the web UI without artefacts.
+# Three ways in, so a release never has to have files attached by hand:
+#
+#   release.published  — creating a release in the web interface builds and
+#                        attaches the archives to it on its own. This is the
+#                        normal path.
+#   push of a v* tag   — `git push origin v1.2.3` does the same without ever
+#                        opening a browser.
+#   workflow_dispatch  — repairs a release that was published before this
+#                        workflow existed.
 
 on:
+  release:
+    types: [published]
   push:
     tags: ['v*']
   workflow_dispatch:
@@ -29,7 +37,9 @@ jobs:
       - name: Resolve the tag
         id: tag
         run: |
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          # release.published carries the tag in the event; a tag push has it
+          # in ref_name; workflow_dispatch is told it.
+          tag="${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}"
           case "$tag" in
             v*) ;;
             *) echo "::error::tag '$tag' must start with 'v'"; exit 1 ;;

@@ -186,6 +186,7 @@ func (m *Manager) Check(ctx context.Context, prerelease bool) (*Available, error
 		}
 		if a := rel.Asset(m.assetName(rel.Tag)); a != nil {
 			avail.Size = a.Size
+			avail.AssetReady = true
 		}
 	}
 
@@ -246,7 +247,7 @@ func (m *Manager) Stage(ctx context.Context, tag, by string, automatic bool) (*S
 		var err error
 		if len(rel.Assets) == 0 {
 			err = failf(ReasonNoAssets, nil,
-				"release %s has no files attached to it, so there is nothing to install. The release was published without its build artefacts.",
+				"release %s has no files attached to it yet. If it was published in the last few minutes its build is probably still running — try again shortly.",
 				rel.Tag)
 		} else {
 			err = failf(ReasonNoBuild, nil,

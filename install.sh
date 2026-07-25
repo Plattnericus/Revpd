@@ -13,6 +13,13 @@
 #   REVPD_NONINTERACTIVE=1   skip every prompt, use defaults
 #   REVPD_REPO=owner/name    install from a fork
 #   GITHUB_TOKEN=…           raise the API rate limit on a shared address
+#   REVPD_BUILD_WAIT=600     seconds to wait for a release build to finish
+#   REVPD_NO_BUILD=1         fail rather than compile from source
+#   TMPDIR_BUILD=/mnt/big    where to build, when /var/tmp is short of space
+#
+# A release with no files attached to it still installs: the installer waits
+# for the build that publishes them, and compiles the tag from source if no
+# build is coming.
 
 set -Eeuo pipefail
 
@@ -163,7 +170,20 @@ RELEASES_PAGE="https://github.com/${REPO}/releases"
 INSTALL_CMD="curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | sudo bash"
 
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+BUILD=""
+
+# cleanup must never change the exit status. Go leaves its module cache
+# read-only, so removing a build directory takes a chmod first — and a failure
+# to tidy up is not a failure to install.
+cleanup() {
+    if [ -n "${BUILD:-}" ] && [ -d "$BUILD" ]; then
+        chmod -R u+w "$BUILD" 2>/dev/null || true
+        rm -rf "$BUILD" 2>/dev/null || true
+    fi
+    rm -rf "$TMP" 2>/dev/null || true
+    return 0
+}
+trap cleanup EXIT
 
 # fetch retrieves a URL and reports separately whether the request reached
 # GitHub at all (CURL_EXIT) and what GitHub answered (HTTP_STATUS).
@@ -266,8 +286,14 @@ api_checked() {
             reset=$(grep -i '^x-ratelimit-reset:' "${TMP}/headers" 2>/dev/null | tr -d '\r' | awk '{print $2}' | tail -n1 || true)
 
             if [ "${remaining:-1}" = "0" ]; then
+                # GNU date takes -d @epoch, BSD date takes -r epoch. Try both
+                # rather than tell someone to wait until "shortly".
                 local when="shortly"
-                [ -n "$reset" ] && when=$(date -d "@${reset}" '+%H:%M:%S %Z' 2>/dev/null || echo "shortly")
+                if [ -n "$reset" ]; then
+                    when=$(date -d "@${reset}" '+%H:%M:%S %Z' 2>/dev/null \
+                        || date -r "${reset}" '+%H:%M:%S %Z' 2>/dev/null \
+                        || echo "shortly")
+                fi
                 die "GitHub's API rate limit for this IP address is used up (403).
 
   Anonymous requests are limited to 60 per hour and counted per address, so a
@@ -341,6 +367,281 @@ $(printf '%s\n' "$tags" | sed 's/^/    /')
   Full list with their files: ${RELEASES_PAGE}"
 }
 
+# ------------------------------------------------------------ from source ---
+
+# ver_ge compares dotted version numbers. Used to decide whether the Go and
+# Node already on this machine are new enough to build with, so a server that
+# has them does not download another copy.
+ver_ge() {
+    [ "$1" = "$2" ] && return 0
+    awk -v a="$1" -v b="$2" '
+        function num(s, i, p) { split(s, p, "."); return p[i] + 0 }
+        BEGIN {
+            for (i = 1; i <= 4; i++) {
+                if (num(a, i) > num(b, i)) exit 0
+                if (num(a, i) < num(b, i)) exit 1
+            }
+            exit 0
+        }'
+}
+
+# ci_in_progress reports whether a build is running for this repository right
+# now. Public repositories answer this anonymously.
+ci_in_progress() {
+    fetch "${API}/actions/runs?per_page=30" "${TMP}/runs.json"
+    [ "$HTTP_STATUS" = "200" ] || return 1
+    grep -q '"status"[[:space:]]*:[[:space:]]*"\(queued\|in_progress\|requested\|waiting\|pending\)"' \
+        "${TMP}/runs.json"
+}
+
+# wait_for_release_build holds on while the release's archives are still being
+# built, and prints the asset URL once it appears.
+#
+# Publishing a release in the GitHub web interface starts the build, so for the
+# first couple of minutes afterwards the release genuinely exists with nothing
+# attached to it. Failing in that window would be right but useless.
+#
+# Everything here goes to stderr: stdout is the answer.
+wait_for_release_build() {
+    local limit=${REVPD_BUILD_WAIT:-600} waited=0 url=""
+
+    ci_in_progress || return 0
+
+    local budget="${limit} seconds"
+    [ "$limit" -ge 120 ] && budget="$((limit / 60)) minutes"
+
+    step "Waiting for the release build" >&2
+    say "  ${DIM}${VERSION} is published, but its files are still being built." >&2
+    say "  Giving it up to ${budget}.${R}" >&2
+
+    while [ "$waited" -lt "$limit" ]; do
+        sleep 15
+        waited=$((waited + 15))
+
+        fetch "${API}/releases/tags/${VERSION}" "$RELEASE"
+        if [ "$HTTP_STATUS" = "200" ]; then
+            url=$(asset_urls "$RELEASE" | grep -m1 "/${TARBALL}\$" || true)
+            if [ -n "$url" ]; then
+                ok "the build finished after ${waited}s" >&2
+                printf '%s' "$url"
+                return 0
+            fi
+        fi
+
+        # The run ending without producing our archive means waiting longer
+        # will not help.
+        ci_in_progress || {
+            warn "the build finished without publishing ${TARBALL}" >&2
+            return 0
+        }
+        printf '  %s…%s still building (%ss)\n' "$DIM" "$R" "$waited" >&2
+    done
+
+    warn "gave up waiting after ${waited}s" >&2
+}
+
+# go_toolchain puts a Go new enough to build this source on PATH, using the one
+# already installed when it is recent enough.
+#
+# The required version is read out of the source's own go.mod, so it follows
+# the project rather than a number written into this script.
+go_toolchain() {
+    local need have
+    need=$(sed -n 's/^go \([0-9][0-9.]*\).*/\1/p' "${SRC}/go.mod" | head -n1)
+    [ -n "$need" ] || need=1.21
+
+    if command -v go >/dev/null 2>&1; then
+        have=$(go env GOVERSION 2>/dev/null | sed 's/^go//')
+        if [ -n "$have" ] && ver_ge "$have" "$need"; then
+            ok "Go ${have} is already installed"
+            return 0
+        fi
+        warn "Go ${have:-?} is too old to build this (needs ${need})"
+    fi
+
+    local goarch=$ARCH version file
+    # `sed -n 1p` rather than `head -1`: head closes the pipe after the first
+    # line, curl takes SIGPIPE for it, and pipefail turns that into a failure
+    # of the whole script whenever the response arrives in more than one write.
+    version=$(curl -fsSL --retry 3 "https://go.dev/VERSION?m=text" 2>/dev/null \
+        | sed -n '1p' | tr -d '\r' || true)
+    [ -n "$version" ] || die "could not find out which Go version to download.
+  go.dev did not answer. Install Go ${need} or newer yourself and run this again."
+
+    file="${version}.linux-${goarch}.tar.gz"
+    say "  ${DIM}downloading ${version} (about 80 MB)${R}"
+
+    fetch "https://dl.google.com/go/${file}" "${BUILD}/go.tar.gz"
+    [ "$HTTP_STATUS" = "200" ] || die "could not download the Go toolchain (HTTP ${HTTP_STATUS}):
+  https://dl.google.com/go/${file}"
+
+    # Google publishes a checksum next to every archive; an unverified
+    # compiler is not something to build a security gateway with.
+    fetch "https://dl.google.com/go/${file}.sha256" "${BUILD}/go.sha256"
+    if [ "$HTTP_STATUS" = "200" ]; then
+        local want got
+        want=$(tr -d ' \n\r' < "${BUILD}/go.sha256")
+        got=$(sha256sum "${BUILD}/go.tar.gz" | awk '{print $1}')
+        [ "$want" = "$got" ] || die "the downloaded Go toolchain does not match its published checksum.
+  expected: ${want}
+  actual:   ${got}
+  Nothing was installed."
+    else
+        warn "no checksum published for ${file}"
+    fi
+
+    tar -xzf "${BUILD}/go.tar.gz" -C "$BUILD" || die "the Go toolchain could not be unpacked"
+    PATH="${BUILD}/go/bin:${PATH}"
+    export PATH GOROOT="${BUILD}/go"
+    ok "using ${version}"
+}
+
+# node_toolchain does the same for Node, which is needed to build the web
+# interface that gets compiled into the binary.
+node_toolchain() {
+    local need have
+    # Read the requirement from the frontend's own manifest.
+    need=$(sed -n 's/.*"node"[[:space:]]*:[[:space:]]*"[^0-9]*\([0-9][0-9.]*\).*/\1/p' \
+        "${SRC}/web/package.json" | head -n1)
+    [ -n "$need" ] || need=20
+
+    if command -v node >/dev/null 2>&1; then
+        have=$(node --version 2>/dev/null | sed 's/^v//')
+        if [ -n "$have" ] && ver_ge "$have" "$need"; then
+            ok "Node ${have} is already installed"
+            return 0
+        fi
+        warn "Node ${have:-?} is too old to build the web interface (needs ${need})"
+    fi
+
+    # Node names x86_64 "x64" where Go names it "amd64".
+    local nodearch=$ARCH
+    [ "$ARCH" = "amd64" ] && nodearch=x64
+
+    fetch "https://nodejs.org/dist/index.json" "${BUILD}/node-index.json"
+    [ "$HTTP_STATUS" = "200" ] || die "could not reach nodejs.org to find a Node release.
+  Install Node ${need} or newer yourself and run this again."
+
+    # The newest long-term-support line. The index is one long line, so it is
+    # split into one record per line first; entries are newest first, and an
+    # "lts" of false rather than a name is a current release.
+    # Split to a file first. `grep -m1` reading from a pipe stops early and
+    # kills whatever is feeding it, which pipefail then reports as a failure.
+    local version
+    tr '}' '\n' < "${BUILD}/node-index.json" > "${BUILD}/node-lines"
+    version=$(grep -m1 '"lts":"' "${BUILD}/node-lines" \
+        | grep -o '"version":"v[0-9][0-9.]*"' \
+        | sed 's/.*"v\([0-9.]*\)"/\1/' || true)
+    [ -n "$version" ] || die "could not work out the current Node LTS version from nodejs.org."
+
+    local file="node-v${version}-linux-${nodearch}.tar.gz"
+    say "  ${DIM}downloading Node ${version} (about 50 MB)${R}"
+
+    fetch "https://nodejs.org/dist/v${version}/${file}" "${BUILD}/node.tar.gz"
+    [ "$HTTP_STATUS" = "200" ] || die "could not download Node (HTTP ${HTTP_STATUS}):
+  https://nodejs.org/dist/v${version}/${file}"
+
+    fetch "https://nodejs.org/dist/v${version}/SHASUMS256.txt" "${BUILD}/node.sums"
+    if [ "$HTTP_STATUS" = "200" ]; then
+        local want got
+        want=$(grep " \{1,2\}${file}\$" "${BUILD}/node.sums" | awk '{print $1}' | head -n1)
+        got=$(sha256sum "${BUILD}/node.tar.gz" | awk '{print $1}')
+        [ -n "$want" ] && [ "$want" != "$got" ] && die "the downloaded Node does not match its published checksum.
+  expected: ${want}
+  actual:   ${got}
+  Nothing was installed."
+    fi
+
+    tar -xzf "${BUILD}/node.tar.gz" -C "$BUILD" || die "Node could not be unpacked"
+    PATH="${BUILD}/node-v${version}-linux-${nodearch}/bin:${PATH}"
+    export PATH
+    ok "using Node ${version}"
+}
+
+# build_from_source compiles the release on this machine.
+#
+# Every tag has a source archive whether or not anyone attached files to the
+# release, so this works for a release created in the web interface and never
+# built. It costs a few minutes and a gigabyte of temporary space, which is
+# still better than not being installable.
+build_from_source() {
+    [ -z "${REVPD_NO_BUILD:-}" ] || die "release ${VERSION} has no prebuilt binary for linux/${ARCH},
+  and REVPD_NO_BUILD is set, so it was not compiled here either.
+
+  Unset it, or install a release that does publish binaries."
+
+    step "Building ${VERSION} from source"
+    say "  ${DIM}This release publishes no binary for linux/${ARCH}, so it is compiled"
+    say "  here instead. Expect a few minutes, and longer on a small board.${R}"
+
+    # /tmp is a memory-backed filesystem on many distributions, and a toolchain
+    # plus a build cache does not fit in it. /var/tmp is on disk by design, so
+    # the build happens there rather than filling up RAM.
+    BUILD=$(mktemp -d "${TMPDIR_BUILD:-/var/tmp}/revpd-build.XXXXXX" 2>/dev/null) \
+        || BUILD=$(mktemp -d)
+
+    local free_mb
+    free_mb=$(df -Pm "$BUILD" 2>/dev/null | awk 'NR==2 {print $4}')
+    if [ -n "$free_mb" ] && [ "$free_mb" -lt 2048 ]; then
+        die "building from source needs about 2 GB of free space and $(dirname "$BUILD") has ${free_mb} MB.
+
+  Free some space and run this again, or point the build somewhere roomier:
+    TMPDIR_BUILD=/mnt/big ${INSTALL_CMD}"
+    fi
+
+    # Keep every cache inside the build directory: the script may be running
+    # under sudo with a HOME that is not writable, and nothing it downloads
+    # should outlive it.
+    export GOPATH="${BUILD}/gopath" GOCACHE="${BUILD}/gocache" GOMODCACHE="${BUILD}/gomod"
+    export npm_config_cache="${BUILD}/npm"
+
+    local src_url="https://github.com/${REPO}/archive/refs/tags/${VERSION}.tar.gz"
+    fetch "$src_url" "${BUILD}/src.tar.gz"
+    [ "$CURL_EXIT" -eq 0 ] || network_problem "$src_url"
+    [ "$HTTP_STATUS" = "200" ] || die "could not download the source for ${VERSION} (HTTP ${HTTP_STATUS}):
+  ${src_url}
+
+  Every tag has a source archive, so this failing means the tag itself is gone.
+  Pick another version: ${RELEASES_PAGE}"
+
+    SRC="${BUILD}/src"
+    mkdir -p "$SRC"
+    # The archive holds one top-level directory named after the tag.
+    tar -xzf "${BUILD}/src.tar.gz" -C "$SRC" --strip-components=1 \
+        || die "the source archive could not be unpacked."
+
+    [ -f "${SRC}/go.mod" ] && [ -d "${SRC}/cmd/revpd" ] \
+        || die "the source archive for ${VERSION} does not look like Revpd — it has no go.mod
+  and no cmd/revpd. Nothing was installed."
+    ok "source for ${VERSION} unpacked"
+
+    go_toolchain
+    node_toolchain
+
+    say "  ${DIM}building the web interface…${R}"
+    ( cd "${SRC}/web" && npm ci --no-audit --no-fund --silent >/dev/null 2>&1 ) \
+        || die "installing the web interface's dependencies failed.
+  Run it by hand to see why:  cd ${SRC}/web && npm ci"
+    ( cd "${SRC}/web" && npm run build >/dev/null 2>&1 ) \
+        || die "building the web interface failed.
+  Run it by hand to see why:  cd ${SRC}/web && npm run build"
+
+    [ -f "${SRC}/internal/web/dist/index.html" ] \
+        || die "the web build produced no files, so the binary would have no interface.
+  Nothing was installed."
+
+    say "  ${DIM}compiling…${R}"
+    # Same flags as the release build, so a binary compiled here is the same
+    # thing as one downloaded — including the version it reports.
+    ( cd "$SRC" && CGO_ENABLED=0 go build -trimpath \
+        -ldflags "-s -w -X main.version=${VERSION#v}" \
+        -o "${TMP}/revpd" ./cmd/revpd ) \
+        || die "compiling revpd failed.
+  Run it by hand to see why:  cd ${SRC} && go build ./cmd/revpd"
+
+    ok "built revpd ${VERSION#v} for linux/${ARCH}"
+}
+
 step "Fetching release"
 
 RELEASE="${TMP}/release.json"
@@ -385,42 +686,13 @@ TARBALL="revpd_${VERSION#v}_linux_${ARCH}.tar.gz"
 ASSETS=$(asset_urls "$RELEASE")
 ASSET_NAMES=$(printf '%s\n' "$ASSETS" | sed 's|.*/||' | grep -v '^$' || true)
 
-if [ -z "$ASSET_NAMES" ]; then
-    die "release ${VERSION} exists, but has no files attached to it.
-
-  A Revpd release ships one archive per architecture plus checksums.txt.
-  This tag carries none, so there is genuinely nothing to download — the
-  release was created without ever building the artefacts.
-
-  Nothing on your machine has been changed. What you can do:
-
-    • install a release that does have files — the pages under
-      ${RELEASES_PAGE} show the file list for each one:
-        REVPD_VERSION=vX.Y.Z ${INSTALL_CMD}
-
-    • or build from source (needs Go and Node.js):
-        https://github.com/${REPO}#from-source
-
-  If ${REPO} is yours: the release workflow never ran for this tag. Run it
-  from the Actions tab against ${VERSION}, or push the tag again."
-fi
-
 ASSET_URL=$(printf '%s\n' "$ASSETS" | grep -m1 "/${TARBALL}\$" || true)
 
-if [ -z "$ASSET_URL" ]; then
-    die "release ${VERSION} has files, but none built for linux/${ARCH}.
-
-  This machine reports $(uname -m), so the archive it needs is:
-    ${TARBALL}
-
-  What ${VERSION} actually contains:
-$(printf '%s\n' "$ASSET_NAMES" | sed 's/^/    /')
-
-  If the list above has archives for other architectures only, this release
-  simply was not built for ${ARCH}. Pick a release that was, or build from
-  source: https://github.com/${REPO}#from-source"
-fi
-
+# download_release is the ordinary path: fetch the published archive, hold it
+# against the checksums published with it, and unpack the binary.
+#
+# The body is not indented so the multi-line messages below keep their shape.
+download_release() {
 fetch "$ASSET_URL" "${TMP}/${TARBALL}"
 [ "$CURL_EXIT" -eq 0 ] || network_problem "$ASSET_URL"
 [ "$HTTP_STATUS" = "200" ] || die "downloading ${TARBALL} failed with HTTP ${HTTP_STATUS}.
@@ -474,6 +746,28 @@ tar -xzf "${TMP}/${TARBALL}" -C "$TMP" \
   transit — the checksum above matched.
 
   Nothing was installed. Please report it at https://github.com/${REPO}/issues"
+}
+
+# No binary for this machine. That is not the end of it: the build may still be
+# running, and if no build is coming, the release is compiled from the tag's
+# source instead. Either way the installation goes ahead, so a release never
+# has to have files attached to it by hand.
+if [ -z "$ASSET_URL" ]; then
+    if [ -n "$ASSET_NAMES" ]; then
+        warn "${VERSION} publishes no build for linux/${ARCH}"
+        say "  ${DIM}it has: $(printf '%s ' $ASSET_NAMES)${R}"
+    else
+        warn "${VERSION} has no files attached to it yet"
+    fi
+
+    ASSET_URL=$(wait_for_release_build)
+fi
+
+if [ -n "$ASSET_URL" ]; then
+    download_release
+else
+    build_from_source
+fi
 
 chmod +x "${TMP}/revpd"
 BINARY_VERSION=$("${TMP}/revpd" version 2>/dev/null || true)

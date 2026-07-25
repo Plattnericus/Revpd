@@ -72,6 +72,7 @@ func (s *Server) updateView(ctx context.Context) map[string]any {
 			"published_at": a.PublishedAt.UTC().Format(time.RFC3339),
 			"prerelease":   a.Prerelease,
 			"size":         a.Size,
+			"asset_ready":  a.AssetReady,
 		}
 	}
 	if st.Staged != nil {
@@ -158,6 +159,16 @@ func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.Version = st.Available.Version
+
+		// Published, but its build has not been attached yet. Downloading now
+		// would only fail, and the check that runs on a timer will pick it up
+		// as soon as it lands.
+		if !st.Available.AssetReady {
+			fail(w, http.StatusConflict,
+				"release "+req.Version+" is published but its build for this machine has not been attached yet. "+
+					"That usually takes a couple of minutes after a release goes up — check again shortly.")
+			return
+		}
 	}
 
 	if !update.ApplierInstalled() {
@@ -279,6 +290,13 @@ func (s *Server) checkAndMaybeInstall(ctx context.Context) {
 	}
 
 	slog.Info("a newer release is available", "version", avail.Version, "current", s.updates.Current())
+
+	if !avail.AssetReady {
+		// The release is up but its build has not landed. The next tick will
+		// find it; nothing to do but wait.
+		slog.Info("its build is not published yet, waiting for the next check", "version", avail.Version)
+		return
+	}
 
 	if !s.autoInstallEnabled(ctx) {
 		return // the dashboard will show it; a person decides

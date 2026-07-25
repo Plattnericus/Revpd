@@ -133,6 +133,7 @@ const de = {
   'settings.seconds': 'Sekunden',
   'settings.minutes': 'Minuten',
 
+  'update.buildPending': 'Build läuft noch — die Dateien für diese Version werden gerade erstellt.',
   'update.title': 'Aktualisierung',
   'update.current': 'Installierte Version',
   'update.upToDate': 'Auf dem neuesten Stand',
@@ -263,6 +264,7 @@ const en: Dict = {
   'settings.seconds': 'seconds',
   'settings.minutes': 'minutes',
 
+  'update.buildPending': 'The build is still running — the files for this version are being created.',
   'update.title': 'Update',
   'update.current': 'Installed version',
   'update.upToDate': 'Up to date',
@@ -390,6 +392,7 @@ const fr: Dict = {
   'settings.seconds': 'secondes',
   'settings.minutes': 'minutes',
 
+  'update.buildPending': 'La compilation est en cours — les fichiers de cette version sont en préparation.',
   'update.title': 'Mise à jour',
   'update.current': 'Version installée',
   'update.upToDate': 'À jour',
@@ -517,6 +520,7 @@ const es: Dict = {
   'settings.seconds': 'segundos',
   'settings.minutes': 'minutos',
 
+  'update.buildPending': 'La compilación sigue en marcha: los archivos de esta versión se están creando.',
   'update.title': 'Actualización',
   'update.current': 'Versión instalada',
   'update.upToDate': 'Al día',
@@ -644,6 +648,7 @@ const it: Dict = {
   'settings.seconds': 'secondi',
   'settings.minutes': 'minuti',
 
+  'update.buildPending': 'La build è ancora in corso: i file di questa versione si stanno creando.',
   'update.title': 'Aggiornamento',
   'update.current': 'Versione installata',
   'update.upToDate': 'Aggiornato',
@@ -771,6 +776,7 @@ const nl: Dict = {
   'settings.seconds': 'seconden',
   'settings.minutes': 'minuten',
 
+  'update.buildPending': 'De build loopt nog — de bestanden voor deze versie worden aangemaakt.',
   'update.title': 'Update',
   'update.current': 'Geïnstalleerde versie',
   'update.upToDate': 'Bij',
@@ -898,6 +904,7 @@ const pl: Dict = {
   'settings.seconds': 'sekundy',
   'settings.minutes': 'minuty',
 
+  'update.buildPending': 'Kompilacja jeszcze trwa — pliki tej wersji są dopiero tworzone.',
   'update.title': 'Aktualizacja',
   'update.current': 'Zainstalowana wersja',
   'update.upToDate': 'Aktualna',
@@ -1025,6 +1032,7 @@ const pt: Dict = {
   'settings.seconds': 'segundos',
   'settings.minutes': 'minutos',
 
+  'update.buildPending': 'A compilação ainda está a decorrer — os ficheiros desta versão estão a ser criados.',
   'update.title': 'Atualização',
   'update.current': 'Versão instalada',
   'update.upToDate': 'Em dia',
@@ -1152,6 +1160,7 @@ const tr: Dict = {
   'settings.seconds': 'saniye',
   'settings.minutes': 'dakika',
 
+  'update.buildPending': 'Derleme sürüyor — bu sürümün dosyaları henüz oluşturuluyor.',
   'update.title': 'Güncelleme',
   'update.current': 'Kurulu sürüm',
   'update.upToDate': 'Güncel',
@@ -1279,6 +1288,7 @@ const ru: Dict = {
   'settings.seconds': 'секунд',
   'settings.minutes': 'минут',
 
+  'update.buildPending': 'Сборка ещё идёт — файлы этой версии пока создаются.',
   'update.title': 'Обновление',
   'update.current': 'Установленная версия',
   'update.upToDate': 'Актуальная версия',

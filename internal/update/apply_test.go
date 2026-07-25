@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -40,8 +42,8 @@ func newBed(t *testing.T, currentVersion, stagedVersion string) *bed {
 	mustMkdir(t, filepath.Dir(b.binary))
 	mustMkdir(t, filepath.Join(b.dir, "staged"))
 
-	writeScript(t, b.binary, currentVersion)
-	writeScript(t, filepath.Join(b.dir, "staged", "revpd"), stagedVersion)
+	writeStub(t, b.binary, currentVersion)
+	writeStub(t, filepath.Join(b.dir, "staged", "revpd"), stagedVersion)
 
 	sum, err := sha256File(filepath.Join(b.dir, "staged", "revpd"))
 	if err != nil {
@@ -167,7 +169,9 @@ func TestApplyRefusesABinaryThatWillNotRun(t *testing.T) {
 	b := newBed(t, "1.1.0", "1.2.0")
 
 	staged := filepath.Join(b.dir, "staged", "revpd")
-	write(t, staged, "this is not a program", 0o755)
+	if err := copyFile(brokenBinary(t), staged, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Keep the manifest and request honest about the new contents, so the
 	// hash check passes and the run check is what rejects it.
@@ -196,7 +200,7 @@ func TestApplyRefusesAVersionMismatch(t *testing.T) {
 	b := newBed(t, "1.1.0", "1.2.0")
 
 	staged := filepath.Join(b.dir, "staged", "revpd")
-	writeScript(t, staged, "9.9.9") // says one thing, tagged another
+	writeStub(t, staged, "9.9.9") // says one thing, tagged another
 
 	sum, err := sha256File(staged)
 	if err != nil {
@@ -281,13 +285,145 @@ func TestApplyAlwaysLeavesAResult(t *testing.T) {
 	}
 }
 
+// The architecture check is the one piece of the applier whose behaviour
+// depends on the machine running the test: it only inspects ELF, so on macOS
+// it is skipped entirely and a fault in it would go unnoticed until CI.
+// Cross-compiling real Linux binaries exercises it from anywhere.
+func TestCheckExecutableJudgesRealLinuxBinaries(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no Go toolchain on PATH")
+	}
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(src, []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	build := func(goarch string) string {
+		out := filepath.Join(dir, "revpd-"+goarch)
+		cmd := exec.Command("go", "build", "-o", out, src)
+		cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+goarch, "CGO_ENABLED=0")
+		if msg, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cross-compiling for linux/%s failed: %v\n%s", goarch, err, msg)
+		}
+		return out
+	}
+
+	amd64, arm64 := build("amd64"), build("arm64")
+
+	if err := checkExecutable(amd64, "linux", "amd64"); err != nil {
+		t.Errorf("a genuine linux/amd64 binary was rejected: %v", err)
+	}
+	if err := checkExecutable(arm64, "linux", "arm64"); err != nil {
+		t.Errorf("a genuine linux/arm64 binary was rejected: %v", err)
+	}
+
+	// The case that matters: an archive built for the wrong machine.
+	err := checkExecutable(arm64, "linux", "amd64")
+	if err == nil {
+		t.Fatal("an arm64 binary was accepted on an amd64 machine")
+	}
+	if !strings.Contains(err.Error(), "amd64") {
+		t.Errorf("the message does not name this machine's architecture: %v", err)
+	}
+
+	// A shell script is not something to install, however executable it is.
+	script := filepath.Join(dir, "script")
+	write(t, script, "#!/bin/sh\necho revpd 1.0.0\n", 0o755)
+	if err := checkExecutable(script, "linux", "amd64"); err == nil {
+		t.Error("a shell script passed as a Linux binary")
+	}
+}
+
 /* -------------------------------------------------------------- helpers --- */
 
-// writeScript makes a stand-in for the revpd binary that answers `version`
-// the way the real one does.
-func writeScript(t *testing.T, path, version string) {
+// The stand-in binaries have to be real executables, not shell scripts: the
+// applier checks that what it is about to install is a native binary for this
+// machine, and a script fails that check on Linux while slipping past it
+// everywhere else. Compiling them keeps the test honest on both.
+var (
+	binCacheOnce sync.Once
+	binCacheDir  string
+	binCacheErr  error
+	binCacheMu   sync.Mutex
+	binCache     = map[string]string{}
+)
+
+// stubBinary compiles a program that answers `version` the way revpd does, and
+// caches it: several tests want the same version.
+func stubBinary(t *testing.T, version string) string {
 	t.Helper()
-	write(t, path, "#!/bin/sh\nif [ \"$1\" = version ]; then echo \"revpd "+version+"\"; fi\n", 0o755)
+	return buildStub(t, "version-"+version, `package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("revpd `+version+`")
+	}
+}
+`)
+}
+
+// brokenBinary compiles a real executable that fails when it is run, which is
+// how a build for the wrong libc or a corrupted binary behaves.
+func brokenBinary(t *testing.T) string {
+	t.Helper()
+	return buildStub(t, "broken", `package main
+
+import "os"
+
+func main() { os.Exit(1) }
+`)
+}
+
+func buildStub(t *testing.T, name, source string) string {
+	t.Helper()
+
+	binCacheOnce.Do(func() {
+		binCacheDir, binCacheErr = os.MkdirTemp("", "revpd-stub-bins")
+	})
+	if binCacheErr != nil {
+		t.Fatalf("could not make a directory for the stub binaries: %v", binCacheErr)
+	}
+
+	binCacheMu.Lock()
+	defer binCacheMu.Unlock()
+
+	if path, ok := binCache[name]; ok {
+		return path
+	}
+
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no Go toolchain on PATH to build the stub binaries with")
+	}
+
+	src := filepath.Join(binCacheDir, name+".go")
+	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(binCacheDir, name)
+	cmd := exec.Command("go", "build", "-o", out, src)
+	if msg, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("could not build the stub binary: %v\n%s", err, msg)
+	}
+
+	binCache[name] = out
+	return out
+}
+
+// writeStub puts a compiled stand-in reporting the given version at path.
+func writeStub(t *testing.T, path, version string) {
+	t.Helper()
+	mustMkdir(t, filepath.Dir(path))
+	if err := copyFile(stubBinary(t, version), path, 0o755); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func write(t *testing.T, path, body string, mode os.FileMode) {

@@ -249,6 +249,44 @@ func TestCheckToleratesLeadingZeroTags(t *testing.T) {
 	}
 }
 
+// Publishing a release starts its build; for the couple of minutes until that
+// finishes the release is real but has nothing attached. The update is still
+// worth reporting — it just cannot be installed yet, and the dashboard needs
+// to be able to tell those apart.
+func TestCheckFlagsAReleaseWhoseBuildIsNotPublishedYet(t *testing.T) {
+	h := newHub(t)
+	h.releases = []Release{{Tag: "v1.2.0", PublishedAt: time.Now()}}
+	m := h.manager(t, "1.1.0")
+
+	avail, err := m.Check(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if avail == nil {
+		t.Fatal("a newer release with no files yet was not reported at all")
+	}
+	if avail.AssetReady {
+		t.Fatal("a release with no files was reported as ready to install")
+	}
+}
+
+func TestCheckMarksAPublishedBuildReady(t *testing.T) {
+	h := newHub(t)
+	h.publish("v1.2.0", fakeELF())
+	m := h.manager(t, "1.1.0")
+
+	avail, err := m.Check(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if avail == nil || !avail.AssetReady {
+		t.Fatalf("a release with a matching archive was not marked installable: %+v", avail)
+	}
+	if avail.Size == 0 {
+		t.Error("no download size was recorded")
+	}
+}
+
 func TestCheckRefusesToCompareDevBuilds(t *testing.T) {
 	h := newHub(t)
 	h.publish("v1.2.0", fakeELF())

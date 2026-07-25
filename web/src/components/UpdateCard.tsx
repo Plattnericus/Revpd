@@ -119,7 +119,7 @@ export function UpdateBanner({ ctl }: { ctl: Controller }) {
               </p>
             </div>
 
-            {s.available && !busyPhase && isAdmin && s.can_install !== false && (
+            {s.available?.asset_ready && !busyPhase && isAdmin && s.can_install !== false && (
               <Button
                 variant="primary"
                 icon={<ArrowUpCircle size={15} strokeWidth={2} />}
@@ -133,10 +133,13 @@ export function UpdateBanner({ ctl }: { ctl: Controller }) {
 
           {s.progress && s.progress.total > 0 && <ProgressBar {...s.progress} />}
 
-          {s.available && s.can_install === false && (
+          {s.available && !s.available.asset_ready && (
+            <Note tone="muted">{t('update.buildPending')}</Note>
+          )}
+          {s.available?.asset_ready && s.can_install === false && (
             <Note tone="orange">{t('update.noApplier')}</Note>
           )}
-          {s.available && isAdmin && s.can_install !== false && !busyPhase && (
+          {s.available?.asset_ready && isAdmin && s.can_install !== false && !busyPhase && (
             <Note tone="muted">{t('update.restartWarning')}</Note>
           )}
           {ctl.error && <Note tone="red">{ctl.error}</Note>}
@@ -196,7 +199,7 @@ export function UpdatePanel({ ctl }: { ctl: Controller }) {
             >
               {t('update.check')}
             </Button>
-            {s.available && !busyPhase && s.can_install !== false && (
+            {s.available?.asset_ready && !busyPhase && s.can_install !== false && (
               <Button size="sm" variant="primary" onClick={() => ctl.install()} disabled={ctl.busy}>
                 {t('update.install')}
               </Button>
@@ -208,6 +211,7 @@ export function UpdatePanel({ ctl }: { ctl: Controller }) {
       {s.progress && s.progress.total > 0 && <ProgressBar {...s.progress} />}
 
       {busyPhase && <Note tone="muted">{phaseLabel(s.phase, t)}</Note>}
+      {s.available && !s.available.asset_ready && <Note tone="muted">{t('update.buildPending')}</Note>}
       {s.error && <Note tone="orange">{s.error}</Note>}
       {ctl.error && <Note tone="red">{ctl.error}</Note>}
       {s.last_result && (

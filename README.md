@@ -96,23 +96,32 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=1.2.3" -o revpd
 <details>
 <summary><b>Publishing a release — for maintainers</b></summary>
 
-The installer and the built-in updater both download the files attached to a
-GitHub release. A tag with no files attached is not installable, so releases are
-built by CI rather than created by hand:
+Releasing is one step, and files never have to be attached by hand. Either:
 
-```bash
-git tag v1.2.3 && git push origin v1.2.3
-```
+- **Draw up a release in the web interface** and publish it, or
+- **`git tag v1.2.3 && git push origin v1.2.3`**
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) builds the web
-interface, compiles for linux/amd64 and linux/arm64, packages
+[`.github/workflows/release.yml`](.github/workflows/release.yml) fires on both.
+It builds the web interface, compiles for linux/amd64 and linux/arm64, packages
 `revpd_<version>_linux_<arch>.tar.gz` plus `checksums.txt`, checks that the
 archive unpacks to a binary reporting the expected version, and attaches
 everything to the release.
 
-If a release was already created in the web interface without artefacts, run the
-workflow by hand from the Actions tab and give it the existing tag — it attaches
-the files to what is already there.
+For the couple of minutes between publishing and the build finishing, the
+release exists with nothing attached. Nothing breaks in that window:
+
+- `install.sh` notices a build is running and waits for it.
+- The dashboard shows the new version and says its build is not ready yet,
+  rather than offering a button that would fail.
+
+And if no build is coming at all — a release published before this workflow
+existed, or a fork without Actions — `install.sh` downloads the tag's source
+archive, fetches verified Go and Node toolchains if the machine's own are
+missing or too old, and compiles the release itself. Set `REVPD_NO_BUILD=1` to
+refuse rather than compile.
+
+To repair an old release, run the workflow from the Actions tab and give it the
+existing tag.
 
 </details>
 

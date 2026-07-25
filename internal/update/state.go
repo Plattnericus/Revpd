@@ -29,6 +29,13 @@ type Available struct {
 	PublishedAt time.Time `json:"published_at"`
 	Prerelease  bool      `json:"prerelease"`
 	Size        int64     `json:"size"`
+
+	// AssetReady is false while the release exists but the build for this
+	// machine has not been attached to it yet — the minutes between publishing
+	// a release and its workflow finishing. The update is real, it just cannot
+	// be installed this second, and offering a button that fails would be
+	// worse than saying so.
+	AssetReady bool `json:"asset_ready"`
 }
 
 // Staged is a downloaded, checksum-verified binary waiting to be installed.
