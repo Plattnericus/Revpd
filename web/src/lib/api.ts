@@ -120,7 +120,14 @@ export const api = {
   /* ------------------------------------------------------ first run --- */
 
   setupStatus: () =>
-    get<{ setup_required: boolean; hostname: string; gateway: string; csrf: string }>('/api/setup/status'),
+    get<{
+      setup_required: boolean
+      hostname: string
+      gateway: string
+      csrf: string
+      /** False when the wizard may offer to skip enrolling a second factor. */
+      second_factor_required: boolean
+    }>('/api/setup/status'),
 
   setupAdmin: (u: { username: string; display_name: string; password: string }) =>
     post<{ id: number; csrf: string }>('/api/setup/admin', u),

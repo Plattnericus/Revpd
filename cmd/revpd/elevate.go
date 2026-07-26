@@ -133,6 +133,68 @@ func runAsRoot(sudo, self string, args []string) error {
 	return fmt.Errorf("could not run sudo: %w", err)
 }
 
+// rootCommands are the ones that cannot work without root, because they read
+// /etc/revpd — the configuration is 0640 root:revpd and the secrets file
+// beside it holds the master key.
+//
+// Listed rather than discovered by trying and failing: "permission denied" on
+// a path somebody did not ask about is a worse first experience than being
+// told what is needed and asked for it.
+var rootCommands = map[string]bool{
+	"user": true, "target": true, "machine": true, "access": true,
+	"passkey": true, "passkeys": true, "wake": true, "sessions": true,
+	"session": true, "logs": true, "status": true, "config": true,
+	"doctor": true, "check": true, "audit": true, "backup": true,
+	"restore": true, "uninstall": true, "service": true,
+	"useradd": true, "enroll": true, "targetadd": true,
+}
+
+// elevateIfNeeded raises privileges for a command that cannot work without
+// them, before it gets far enough to fail on a file it cannot open.
+//
+// `serve` is deliberately absent: systemd starts it as the unprivileged
+// service account on purpose, and it must never quietly become root.
+// `genkey`, `version` and `help` need nothing.
+func elevateIfNeeded(args []string) error {
+	if len(args) == 0 || !rootCommands[args[0]] {
+		return nil
+	}
+
+	// Reading the service status needs nothing; changing it does. The service
+	// command sorts that out for itself.
+	if args[0] == "service" && len(args) > 1 && args[1] == "status" {
+		return nil
+	}
+
+	return needRoot(describe(args), args...)
+}
+
+// describe names the action for the password prompt, so it explains itself.
+func describe(args []string) string {
+	switch args[0] {
+	case "user", "useradd":
+		return "managing accounts"
+	case "target", "machine", "targetadd":
+		return "managing machines"
+	case "access":
+		return "changing who can reach what"
+	case "backup":
+		return "taking a backup"
+	case "audit":
+		return "reading the audit log"
+	case "logs":
+		return "reading the service log"
+	case "doctor", "check":
+		return "checking the installation"
+	case "status":
+		return "reading the status"
+	case "config":
+		return "reading the configuration"
+	default:
+		return "this"
+	}
+}
+
 // requireRoot is the older, blunter check: it refuses rather than elevating.
 //
 // Kept for the places where raising privileges would be wrong — the applier

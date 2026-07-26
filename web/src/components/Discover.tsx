@@ -35,29 +35,7 @@ export function DiscoverSheet({
   const [error, setError] = useState('')
   const [added, setAdded] = useState<string[]>([])
 
-  const loadRanges = useCallback(async () => {
-    try {
-      const data = await api.discoverRanges()
-      setRanges(data.ranges)
-      // Preselect the first range small enough to sweep — on a home network
-      // that is the only one, and nobody should have to choose.
-      const usable = data.ranges.find((r) => !r.too_large)
-      if (usable) setCidr(usable.cidr)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }, [])
-
-  useEffect(() => {
-    if (open) {
-      loadRanges()
-      setHosts(null)
-      setAdded([])
-      setError('')
-    }
-  }, [open, loadRanges])
-
-  const run = async (fn: () => Promise<{ hosts: ApiHost[]; known: string[] }>) => {
+  const run = useCallback(async (fn: () => Promise<{ hosts: ApiHost[]; known: string[] }>) => {
     setBusy(true)
     setError('')
     setHosts(null)
@@ -70,7 +48,36 @@ export function DiscoverSheet({
     } finally {
       setBusy(false)
     }
-  }
+  }, [])
+
+  // Work out which network this is and sweep it, without being asked.
+  //
+  // There is only ever one answer on a home or office network, and making
+  // somebody choose it from a list of one — then press a button — is asking
+  // them to confirm something the gateway already knows.
+  const loadRanges = useCallback(async () => {
+    try {
+      const data = await api.discoverRanges()
+      setRanges(data.ranges)
+
+      const usable = data.ranges.find((r) => !r.too_large)
+      if (!usable) return
+
+      setCidr(usable.cidr)
+      await run(() => api.discoverScan(usable.cidr))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [run])
+
+  useEffect(() => {
+    if (open) {
+      loadRanges()
+      setHosts(null)
+      setAdded([])
+      setError('')
+    }
+  }, [open, loadRanges])
 
   const add = async (h: ApiHost) => {
     setError('')
@@ -127,7 +134,7 @@ export function DiscoverSheet({
           icon={<Radar size={15} strokeWidth={2} className={busy ? 'animate-spin' : undefined} />}
           onClick={() => run(() => api.discoverScan(cidr))}
         >
-          {t('discover.scan')}
+          {hosts ? t('discover.rescan') : t('discover.scan')}
         </Button>
       </div>
 

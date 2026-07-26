@@ -10,9 +10,12 @@ import { api, setCSRF } from '../lib/api'
 import { useT } from '../lib/lang'
 
 /*
-  First run. Four steps, one screen at a time, no way to skip the second
-  factor — a gateway whose administrator has only a password would defeat the
-  entire point of it.
+  First run. Four steps, one screen at a time.
+
+  The second factor can be skipped only where the configuration allows it —
+  auth.require_second_factor decides, and the server says so in the setup
+  status rather than the browser guessing. A skip button leading to an account
+  that then cannot sign in would be worse than no button at all.
 */
 
 type Step = 'admin' | 'enroll' | 'target' | 'done'
@@ -23,6 +26,7 @@ export function Setup() {
 
   const [step, setStep] = useState<Step>('admin')
   const [gateway, setGateway] = useState('')
+  const [factorRequired, setFactorRequired] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -32,7 +36,10 @@ export function Setup() {
   useEffect(() => {
     api
       .setupStatus()
-      .then((s) => setGateway(s.gateway ?? ''))
+      .then((s) => {
+        setGateway(s.gateway ?? '')
+        setFactorRequired(s.second_factor_required !== false)
+      })
       .catch(() => {})
   }, [])
 
@@ -82,7 +89,14 @@ export function Setup() {
             transition={{ type: 'spring', stiffness: 420, damping: 34 }}
           >
             {step === 'admin' && <AdminStep busy={busy} run={run} onDone={() => setStep('enroll')} />}
-            {step === 'enroll' && <EnrollStep busy={busy} run={run} onDone={() => setStep('target')} />}
+            {step === 'enroll' && (
+              <EnrollStep
+                busy={busy}
+                run={run}
+                required={factorRequired}
+                onDone={() => setStep('target')}
+              />
+            )}
             {step === 'target' && (
               <TargetStep busy={busy} run={run} onDone={() => setStep('done')} onSkip={() => setStep('done')} />
             )}
@@ -204,10 +218,12 @@ function AdminStep({
 function EnrollStep({
   busy,
   run,
+  required,
   onDone,
 }: {
   busy: boolean
   run: (fn: () => Promise<void>) => Promise<void>
+  required: boolean
   onDone: () => void
 }) {
   const t = useT()
@@ -218,9 +234,14 @@ function EnrollStep({
   const canvas = useRef<HTMLCanvasElement>(null)
   const started = useRef(false)
 
-  // Once only: a second call would mint a new secret and invalidate the QR
-  // code the person may already have scanned.
-  useEffect(() => {
+  // Where skipping is allowed, the choice comes before anything is created.
+  //
+  // Asking afterwards would be a trap: enrolling mints the secret and stores
+  // it immediately, so a skip at that point would leave an account holding a
+  // second factor nobody ever scanned — and no way to sign in.
+  const [begun, setBegun] = useState(required)
+
+  const begin = () => {
     if (started.current) return
     started.current = true
 
@@ -232,7 +253,37 @@ function EnrollStep({
         await QRCode.toCanvas(canvas.current, res.uri, { width: 176, margin: 1 })
       }
     })
-  }, [run])
+  }
+
+  useEffect(() => {
+    if (begun) begin()
+    // begin guards itself against running twice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [begun])
+
+  if (!begun) {
+    return (
+      <Card>
+        <h2 className="text-[15px] font-semibold tracking-[-0.015em]">{t('setup.enrollTitle')}</h2>
+        <p className="mb-4 mt-0.5 text-[13px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          {t('setup.enrollWhy')}
+        </p>
+
+        <div className="flex flex-col gap-2">
+          <Button variant="primary" className="w-full" disabled={busy} onClick={() => setBegun(true)}>
+            {t('setup.enrollNow')}
+          </Button>
+          <Button variant="ghost" className="w-full" disabled={busy} onClick={onDone}>
+            {t('setup.enrollSkip')}
+          </Button>
+        </div>
+
+        <p className="mt-3 text-[12px] leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+          {t('setup.enrollSkipHint')}
+        </p>
+      </Card>
+    )
+  }
 
   const confirm = (e: React.FormEvent) => {
     e.preventDefault()

@@ -262,6 +262,15 @@ func Defaults() Config {
 	}
 }
 
+// envFileErr remembers why the secrets file could not be read, so the message
+// about a missing key can name the real cause — almost always a permission
+// problem, which "run it with sudo" fixes and "generate a new key" does not.
+var envFileErr error
+
+// EnvFileProblem returns why the secrets file could not be read, if it could
+// not be.
+func EnvFileProblem() error { return envFileErr }
+
 func Load(path string) (Config, error) {
 	cfg := Defaults()
 
@@ -274,6 +283,16 @@ func Load(path string) (Config, error) {
 	dec.KnownFields(true) // a typo in a security setting should fail loudly
 	if err := dec.Decode(&cfg); err != nil {
 		return cfg, fmt.Errorf("parse config %s: %w", path, err)
+	}
+
+	// The secrets file beside it, the same one systemd hands to the service.
+	// Without this every command that opens the database fails on a missing
+	// master key that is sitting right there on disk.
+	//
+	// A failure to read it is not fatal here: the key may be in the
+	// environment already, as it is in Docker. Whatever needs it says so.
+	if err := LoadEnvFile(EnvFilePath(path)); err != nil {
+		envFileErr = err
 	}
 
 	cfg.applyEnv()

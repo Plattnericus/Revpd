@@ -76,6 +76,11 @@ func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 		"hostname":       s.cfg.Web.Hostname,
 		"gateway":        s.gatewayAddr(),
 		"csrf":           csrf,
+
+		// Whether the wizard may offer to skip the second factor. Decided
+		// here rather than in the browser: a skip button that leads to an
+		// account which then cannot sign in would be worse than no button.
+		"second_factor_required": s.cfg.Auth.RequireSecondFactor,
 	})
 }
 

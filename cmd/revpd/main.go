@@ -61,6 +61,12 @@ func run() error {
 		return nil
 	}
 
+	// Most commands read /etc/revpd, which only root may. Ask for the rights
+	// up front rather than failing later on a path nobody mentioned.
+	if err := elevateIfNeeded(os.Args[1:]); err != nil {
+		return err
+	}
+
 	switch os.Args[1] {
 	// Everyday management.
 	case "menu":
@@ -769,9 +775,20 @@ func defaultConfigPath() string {
 func openData(ctx context.Context, cfg config.Config) (*store.DB, *audit.Log, *crypto.Sealer, error) {
 	key := cfg.MasterKey()
 	if key == "" {
+		// Almost always the secrets file could not be read, not that there is
+		// no key. Saying "generate one" there would be terrible advice: a new
+		// key makes the existing database unreadable.
+		if err := config.EnvFileProblem(); err != nil {
+			return nil, nil, nil, fmt.Errorf(
+				"could not read the master key from %s: %w\n"+
+					"The file is readable by root only. Run the command again with sudo.",
+				config.EnvFilePath(defaultConfigPath()), err)
+		}
 		return nil, nil, nil, fmt.Errorf(
-			"%s is not set — generate one with `revpd genkey` and put it in your .env",
-			cfg.Auth.MasterKeyEnv)
+			"%s is not set, and %s does not contain it.\n"+
+				"If this is a new installation, create the key with `revpd genkey`.\n"+
+				"If it is not, the key is lost and the database cannot be decrypted — restore a backup.",
+			cfg.Auth.MasterKeyEnv, config.EnvFilePath(defaultConfigPath()))
 	}
 	sealer, err := crypto.NewSealer(key)
 	if err != nil {
