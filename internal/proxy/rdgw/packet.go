@@ -31,21 +31,21 @@ const MaxPacket = 64 * 1024
 
 // Packet types, MS-TSGU 2.2.3.1.
 const (
-	PktHandshakeRequest  uint16 = 0x0001
-	PktHandshakeResponse uint16 = 0x0002
-	PktExtendedAuth      uint16 = 0x0003
-	PktTunnelCreate      uint16 = 0x0004
-	PktTunnelResponse    uint16 = 0x0005
-	PktTunnelAuth        uint16 = 0x0006
+	PktHandshakeRequest   uint16 = 0x0001
+	PktHandshakeResponse  uint16 = 0x0002
+	PktExtendedAuth       uint16 = 0x0003
+	PktTunnelCreate       uint16 = 0x0004
+	PktTunnelResponse     uint16 = 0x0005
+	PktTunnelAuth         uint16 = 0x0006
 	PktTunnelAuthResponse uint16 = 0x0007
-	PktChannelCreate     uint16 = 0x0008
-	PktChannelResponse   uint16 = 0x0009
-	PktData              uint16 = 0x000A
-	PktServiceMessage    uint16 = 0x000B
-	PktReauth            uint16 = 0x000C
-	PktKeepalive         uint16 = 0x000D
-	PktCloseChannel      uint16 = 0x0010
-	PktCloseChannelResp  uint16 = 0x0011
+	PktChannelCreate      uint16 = 0x0008
+	PktChannelResponse    uint16 = 0x0009
+	PktData               uint16 = 0x000A
+	PktServiceMessage     uint16 = 0x000B
+	PktReauth             uint16 = 0x000C
+	PktKeepalive          uint16 = 0x000D
+	PktCloseChannel       uint16 = 0x0010
+	PktCloseChannelResp   uint16 = 0x0011
 )
 
 // Error codes the client understands. Anything non-zero aborts the tunnel.
@@ -121,10 +121,10 @@ func Build(typ uint16, body []byte) []byte {
 
 // HandshakeRequest is what the client opens with, MS-TSGU 2.2.5.3.1.
 type HandshakeRequest struct {
-	VersionMajor uint8
-	VersionMinor uint8
+	VersionMajor  uint8
+	VersionMinor  uint8
 	ClientVersion uint16
-	ExtendedAuth uint16
+	ExtendedAuth  uint16
 }
 
 func ParseHandshakeRequest(body []byte) (*HandshakeRequest, error) {

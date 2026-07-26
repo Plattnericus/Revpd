@@ -13,12 +13,27 @@ data_dir: /var/lib/revpd
 
 
 web:
-  # The web interface. Together with relay.listen below these are the only two
-  # ports that need to face the internet — nothing else is opened.
+  # The web interface, on the port a browser assumes so the address is just
+  # the hostname. Together with relay.listen below these are the only ports
+  # that need to face the internet.
+  #
+  # Binding below 1024 needs CAP_NET_BIND_SERVICE, which the unit file grants
+  # and nothing else — the service still runs as an unprivileged account.
   #
   # Bind it to 127.0.0.1 instead if you would rather reach it through a tunnel:
-  #     ssh -L 8443:127.0.0.1:8443 you@gateway
-  listen: ":8443"
+  #     ssh -L 8443:127.0.0.1:443 you@gateway
+  listen: ":443"
+
+  # Tried in order when listen is already taken, by an existing web server for
+  # instance. Coming up somewhere else and saying so in the log beats refusing
+  # to start on a machine nobody can then reach to fix it.
+  listen_fallbacks: [":8443", ":9443"]
+
+  # Plain HTTP. Serves nothing but a permanent redirect to the portal, so
+  # somebody who types the hostname without https:// still arrives rather than
+  # meeting a dead port. Set to "" to leave 80 closed.
+  http_listen: ":80"
+  http_listen_fallbacks: [":8080", ":9080"]
 
   # What people type into their browser and their RDP client.
   # Also the WebAuthn relying-party ID — changing it invalidates all passkeys.

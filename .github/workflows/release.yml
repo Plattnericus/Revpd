@@ -90,24 +90,45 @@ jobs:
           set -euo pipefail
           mkdir -p release
 
-          for arch in amd64 arm64; do
-            echo "==> linux/$arch"
-            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+          # Debian and Ubuntu on a PC or a server are linux/amd64; a Raspberry
+          # Pi 4 or 5 running Raspberry Pi OS 64-bit is linux/arm64, and the
+          # 32-bit image is linux/arm. The rest are there so the binary can be
+          # run from a workstation, not because the gateway is installed there.
+          #
+          # install.sh only ever fetches the linux archives; the others are for
+          # people who want the CLI locally.
+          for target in \
+              linux/amd64 linux/arm64 linux/arm linux/riscv64 \
+              darwin/amd64 darwin/arm64 \
+              windows/amd64 windows/arm64; do
+            goos=${target%/*}
+            goarch=${target#*/}
+            echo "==> $goos/$goarch"
+
+            binary=revpd
+            [ "$goos" = windows ] && binary=revpd.exe
+
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
               -trimpath \
               -ldflags "-s -w -X main.version=${VERSION}" \
-              -o "release/stage/revpd" ./cmd/revpd
+              -o "release/stage/${binary}" ./cmd/revpd
 
             install -m 0644 README.md release/stage/README.md
 
-            # The installer looks for exactly this name and expects revpd at the
-            # root of the archive.
-            tar -czf "release/revpd_${VERSION}_linux_${arch}.tar.gz" \
-                -C release/stage revpd README.md
+            # The installer looks for exactly this name and expects the binary
+            # at the root of the archive. Windows gets a zip because that is
+            # what opens with a double click there.
+            if [ "$goos" = windows ]; then
+              ( cd release/stage && zip -q "../revpd_${VERSION}_${goos}_${goarch}.zip" "$binary" README.md )
+            else
+              tar -czf "release/revpd_${VERSION}_${goos}_${goarch}.tar.gz" \
+                  -C release/stage "$binary" README.md
+            fi
             rm -rf release/stage
           done
 
           cd release
-          sha256sum ./*.tar.gz | sed 's| \./| |' > checksums.txt
+          sha256sum ./*.tar.gz ./*.zip | sed 's| \./| |' > checksums.txt
           echo "--- artefacts ---"
           cat checksums.txt
 
@@ -159,6 +180,9 @@ jobs:
           set -euo pipefail
           names=$(gh release view "$TAG" --json assets --jq '.assets[].name' | sort)
           echo "$names"
+
+          # These are the ones install.sh and the built-in updater reach for.
+          # A release missing them is not installable, whatever else it has.
           for want in \
               "revpd_${{ steps.tag.outputs.version }}_linux_amd64.tar.gz" \
               "revpd_${{ steps.tag.outputs.version }}_linux_arm64.tar.gz" \

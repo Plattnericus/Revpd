@@ -47,12 +47,12 @@ func (a *fakeAuthenticator) coseKey() []byte {
 
 	// map(5) { 1: 2, 3: -7, -1: 1, -2: x, -3: y }
 	out := []byte{0xA5}
-	out = append(out, 0x01, 0x02)             // kty: EC2
-	out = append(out, 0x03, 0x26)             // alg: ES256 (-7)
-	out = append(out, 0x20, 0x01)             // crv: P-256 (label -1)
-	out = append(out, 0x21, 0x58, 0x20)       // label -2, bytes(32)
+	out = append(out, 0x01, 0x02)       // kty: EC2
+	out = append(out, 0x03, 0x26)       // alg: ES256 (-7)
+	out = append(out, 0x20, 0x01)       // crv: P-256 (label -1)
+	out = append(out, 0x21, 0x58, 0x20) // label -2, bytes(32)
 	out = append(out, x...)
-	out = append(out, 0x22, 0x58, 0x20)       // label -3, bytes(32)
+	out = append(out, 0x22, 0x58, 0x20) // label -3, bytes(32)
 	out = append(out, y...)
 	return out
 }

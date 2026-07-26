@@ -36,6 +36,29 @@ function currentCSRF(): string {
   return sessionStorage.getItem('revpd.csrf') ?? ''
 }
 
+/*
+  A 401 from anywhere means the session is gone, and the whole app has to react
+  to it, not just the screen that happened to ask. The session provider
+  registers here and sends the user back to the login.
+
+  The sign-in endpoints are excluded: there, 401 means "wrong password" or
+  "wrong code", which belongs under the field the user is typing into — not as
+  a redirect that wipes what they entered.
+*/
+type UnauthorizedListener = () => void
+
+let unauthorized: UnauthorizedListener | null = null
+
+export function onUnauthorized(fn: UnauthorizedListener | null) {
+  unauthorized = fn
+}
+
+const SIGN_IN_PATHS = ['/api/login', '/api/mfa', '/api/passkey/login', '/api/setup']
+
+function isSignInPath(path: string): boolean {
+  return SIGN_IN_PATHS.some((p) => path.startsWith(p))
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
@@ -56,6 +79,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const parsed = text ? safeParse(text) : {}
 
   if (!resp.ok) {
+    if (resp.status === 401 && !isSignInPath(path)) unauthorized?.()
     throw new ApiError(resp.status, parsed?.error ?? `request failed with ${resp.status}`)
   }
 

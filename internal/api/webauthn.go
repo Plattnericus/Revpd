@@ -116,8 +116,8 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 	u := userFrom(r.Context())
 
 	var req struct {
-		Name       string                          `json:"name"`
-		Credential webauthn.RegistrationResponse   `json:"credential"`
+		Name       string                        `json:"name"`
+		Credential webauthn.RegistrationResponse `json:"credential"`
 	}
 	if !decode(w, r, &req) {
 		return

@@ -1,15 +1,18 @@
 import { useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowRight, KeyRound, Shield } from 'lucide-react'
 import { Button, Field, spring } from '../components/ui'
 import { api, setCSRF } from '../lib/api'
+import { nextAfterLogin, useSession } from '../lib/session'
 import { passkeysAvailable, usePasskey } from '../lib/passkey'
 import { useT } from '../lib/lang'
 
 export function Login() {
   const nav = useNavigate()
   const t = useT()
+  const { refresh } = useSession()
+  const { search } = useLocation()
 
   const [username, setUsername] = useState('')
   const [pw, setPw] = useState('')
@@ -24,7 +27,14 @@ export function Login() {
     try {
       const res = await api.login(username, pw)
       setPw('') // do not leave it sitting in component state
-      nav(res.stage === 'mfa' ? '/mfa' : '/')
+
+      if (res.stage === 'mfa') {
+        // Half-signed-in: the guard lets /mfa through precisely for this.
+        nav('/mfa' + search, { replace: true })
+        return
+      }
+      await refresh()
+      nav(nextAfterLogin(search), { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -46,7 +56,9 @@ export function Login() {
 
       const credential = await usePasskey(begin.options)
       await api.passkeyLoginFinish(credential)
-      nav('/')
+
+      await refresh()
+      nav(nextAfterLogin(search), { replace: true })
     } catch (err) {
       // A cancelled prompt is a choice, not a failure worth shouting about.
       const message = err instanceof Error ? err.message : String(err)
@@ -118,6 +130,8 @@ export function Login() {
 export function Mfa() {
   const nav = useNavigate()
   const t = useT()
+  const { refresh } = useSession()
+  const { search } = useLocation()
   const [code, setCode] = useState<string[]>(Array(6).fill(''))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -129,7 +143,11 @@ export function Mfa() {
 
     try {
       await api.verify(full)
-      nav('/')
+
+      // The session only becomes full here, so the guard has to re-check
+      // before the dashboard is allowed to render.
+      await refresh()
+      nav(nextAfterLogin(search), { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setCode(Array(6).fill(''))

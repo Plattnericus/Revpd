@@ -38,6 +38,10 @@ type Server struct {
 	updates *update.Manager
 	version string
 
+	// portalAddr is where the portal actually ended up, which is not always
+	// web.listen: the fallback moves it when the usual port is taken.
+	portalAddr string
+
 	assets http.Handler
 }
 

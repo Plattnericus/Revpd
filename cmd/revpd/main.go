@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -86,7 +87,11 @@ func run() error {
 	case "restore":
 		return cmdRestore(os.Args[2:])
 	case "uninstall":
-		return cmdUninstall(os.Args[2:])
+		// errRemoved means it worked; only the menu treats it as a signal.
+		if err := cmdUninstall(os.Args[2:]); err != nil && !errors.Is(err, errRemoved) {
+			return err
+		}
+		return nil
 
 	// The gateway itself.
 	case "serve":
@@ -281,11 +286,27 @@ func cmdServe(args []string) error {
 		slog.Warn("the updater is unavailable", "err", err)
 	}
 
+	// The portal, on the port a browser assumes where that is free. Binding
+	// happens before anything is served so a clash is a startup error rather
+	// than something discovered later.
+	portal, err := config.Listen("tcp", cfg.Web.Listen, cfg.Web.ListenFallbacks)
+	if err != nil {
+		return fmt.Errorf("the web interface could not open a port: %w", err)
+	}
+	defer portal.Listener.Close()
+
+	if portal.FellBack {
+		slog.Warn("the web interface is not on its usual port",
+			"listening_on", portal.Addr,
+			"wanted", cfg.Web.Listen,
+			"refused", strings.Join(portal.Tried, "; "))
+	}
+
 	// Web portal.
 	apiSrv := api.New(db, log, cfg, authMgr, engine, sealer, web.Handler()).
-		WithUpdates(updater, version)
+		WithUpdates(updater, version).
+		WithPortal(portal.Addr)
 	httpSrv := &http.Server{
-		Addr:              cfg.Web.Listen,
 		Handler:           apiSrv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
@@ -312,19 +333,29 @@ func cmdServe(args []string) error {
 	}
 
 	go func() {
-		// Certificates come from TLSConfig, so both arguments stay empty.
-		err := httpSrv.ListenAndServeTLS("", "")
+		// The listener is already open and the certificates come from
+		// TLSConfig, so both arguments stay empty.
+		err := httpSrv.ServeTLS(portal.Listener, "", "")
 		if !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}
 	}()
+
+	// Plain HTTP, serving nothing but a redirect to the portal. Somebody who
+	// types the hostname without https:// would otherwise get a dead port and
+	// conclude the gateway is down.
+	redirectSrv := startHTTPRedirect(cfg, portal.Addr, errs)
+	if redirectSrv != nil {
+		defer redirectSrv.Close()
+	}
 
 	go housekeeping(ctx, db, authMgr, cfg)
 	go apiSrv.RunAutoUpdate(ctx)
 
 	slog.Info("revpd running",
 		"version", version,
-		"web", cfg.Web.Listen,
+		"web", portal.Addr,
+		"portal_url", config.PortalURL(cfg.Web.Hostname, portal.Addr),
 		"relay", cfg.Relay.Listen,
 		"hostname", cfg.Web.Hostname,
 		"jit", cfg.JIT.Enabled)
@@ -342,6 +373,62 @@ func cmdServe(args []string) error {
 	defer cancel()
 	httpSrv.Shutdown(shutdown)
 	return nil
+}
+
+// startHTTPRedirect opens the plain-HTTP port and answers everything on it
+// with a permanent redirect to the portal. Nil when it is turned off, or when
+// the port could not be opened — a missing convenience is not worth refusing
+// to start the gateway over.
+func startHTTPRedirect(cfg config.Config, portalAddr string, errs chan<- error) *http.Server {
+	if cfg.Web.HTTPListen == "" {
+		return nil
+	}
+
+	bound, err := config.Listen("tcp", cfg.Web.HTTPListen, cfg.Web.HTTPListenFallbacks)
+	if err != nil {
+		slog.Warn("no plain-HTTP port could be opened, so http:// links will not redirect",
+			"wanted", cfg.Web.HTTPListen, "err", err)
+		return nil
+	}
+
+	portalPort := config.Port(portalAddr)
+
+	srv := &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// The host is taken from the request rather than from the config,
+			// so this works whether the gateway is reached by name, by IP or
+			// through a tunnel. Only the port is ours to decide.
+			host := r.Host
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if host == "" {
+				host = cfg.Web.Hostname
+			}
+
+			target := "https://" + host
+			if portalPort != "" && portalPort != "443" {
+				target = "https://" + net.JoinHostPort(host, portalPort)
+			}
+			target += r.URL.RequestURI()
+
+			// 308 rather than 301: it keeps the method and body, and it is not
+			// cached as aggressively by browsers that saw an earlier setup.
+			http.Redirect(w, r, target, http.StatusPermanentRedirect)
+		}),
+	}
+
+	go func() {
+		err := srv.Serve(bound.Listener)
+		if !errors.Is(err, http.ErrServerClosed) {
+			// Losing the redirect does not take the gateway down with it.
+			slog.Warn("the plain-HTTP redirect stopped", "err", err)
+		}
+	}()
+
+	slog.Info("redirecting plain HTTP to the portal", "listen", bound.Addr)
+	return srv
 }
 
 // housekeeping trims what would otherwise grow forever.

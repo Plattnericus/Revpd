@@ -125,11 +125,11 @@ func SplitPassword(raw string) (password, factor string) {
 
 // License error codes, MS-RDPBCGR 2.2.1.12.1.3.
 const (
-	licenseErrorAlert      byte   = 0xFF
-	licensePreambleV3      byte   = 0x03
-	statusValidClient      uint32 = 0x00000007
-	stateNoTransition      uint32 = 0x00000002
-	blobTypeError          uint16 = 0x0004
+	licenseErrorAlert byte   = 0xFF
+	licensePreambleV3 byte   = 0x03
+	statusValidClient uint32 = 0x00000007
+	stateNoTransition uint32 = 0x00000002
+	blobTypeError     uint16 = 0x0004
 )
 
 // buildLicenseValidClient tells the client no licence is needed.

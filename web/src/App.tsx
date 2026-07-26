@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './components/ui'
 import { LangProvider } from './lib/lang'
+import { Guard, SessionProvider } from './lib/session'
 import { Shell } from './components/Shell'
 import { Login, Mfa } from './pages/Login'
 import { Setup } from './pages/Setup'
@@ -34,36 +34,22 @@ function Layout() {
   return bare ? routes : <Shell>{routes}</Shell>
 }
 
-/** Sends a fresh install straight into the wizard, wherever they landed. */
-function SetupGate({ children }: { children: React.ReactNode }) {
-  const [checked, setChecked] = useState(false)
-  const nav = useNavigate()
-  const { pathname } = useLocation()
-
-  useEffect(() => {
-    fetch('/api/setup/status')
-      .then((r) => r.json())
-      .then((s) => {
-        if (s.setup_required && pathname !== '/setup') nav('/setup', { replace: true })
-      })
-      .catch(() => {})
-      .finally(() => setChecked(true))
-    // Only on first mount: re-checking on every navigation would be a request
-    // per click for something that changes once in the lifetime of a gateway.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  return checked ? <>{children}</> : null
-}
-
 export default function App() {
   return (
     <ThemeProvider>
       <LangProvider>
         <BrowserRouter>
-          <SetupGate>
-            <Layout />
-          </SetupGate>
+          {/*
+            Guard sits inside the router because it navigates, and outside the
+            layout because nothing behind the login should render even for a
+            frame. A fresh gateway goes to the wizard, a signed-out one to the
+            login, and a signed-in one never sees either.
+          */}
+          <SessionProvider>
+            <Guard>
+              <Layout />
+            </Guard>
+          </SessionProvider>
         </BrowserRouter>
       </LangProvider>
     </ThemeProvider>

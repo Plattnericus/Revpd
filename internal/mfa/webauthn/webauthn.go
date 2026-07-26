@@ -73,14 +73,14 @@ func (c *Challenge) Expired() bool { return time.Now().After(c.ExpiresAt) }
 
 // RegistrationOptions is what the browser passes to navigator.credentials.create.
 type RegistrationOptions struct {
-	Challenge              string               `json:"challenge"`
-	RP                     rpEntity             `json:"rp"`
-	User                   userEntity           `json:"user"`
-	PubKeyCredParams       []credParam          `json:"pubKeyCredParams"`
-	Timeout                int                  `json:"timeout"`
-	AuthenticatorSelection authSelection        `json:"authenticatorSelection"`
-	Attestation            string               `json:"attestation"`
-	ExcludeCredentials     []credDescriptor     `json:"excludeCredentials"`
+	Challenge              string           `json:"challenge"`
+	RP                     rpEntity         `json:"rp"`
+	User                   userEntity       `json:"user"`
+	PubKeyCredParams       []credParam      `json:"pubKeyCredParams"`
+	Timeout                int              `json:"timeout"`
+	AuthenticatorSelection authSelection    `json:"authenticatorSelection"`
+	Attestation            string           `json:"attestation"`
+	ExcludeCredentials     []credDescriptor `json:"excludeCredentials"`
 }
 
 type rpEntity struct {
@@ -100,9 +100,9 @@ type credParam struct {
 }
 
 type authSelection struct {
-	UserVerification    string `json:"userVerification"`
-	ResidentKey         string `json:"residentKey"`
-	RequireResidentKey  bool   `json:"requireResidentKey"`
+	UserVerification   string `json:"userVerification"`
+	ResidentKey        string `json:"residentKey"`
+	RequireResidentKey bool   `json:"requireResidentKey"`
 }
 
 type credDescriptor struct {

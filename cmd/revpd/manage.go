@@ -17,6 +17,7 @@ import (
 	"github.com/plattnericus/revpd/internal/config"
 	"github.com/plattnericus/revpd/internal/crypto"
 	"github.com/plattnericus/revpd/internal/store"
+	"github.com/plattnericus/revpd/internal/update"
 )
 
 /*
@@ -868,8 +869,31 @@ func cmdUninstall(args []string) error {
 	}
 
 	sayf("\n  %sRevpd has been removed.%s\n\n", bold, reset)
-	return nil
+
+	if keepData {
+		sayf("  %s and %s were kept, so a reinstall picks up\n", dataDir, installConfDir)
+		sayf("  every account and the master key exactly as they were.\n\n")
+	}
+
+	repo := update.DefaultRepo()
+	if repo == "" {
+		repo = "plattnericus/revpd"
+	}
+	sayf("  %sReinstall any time:%s\n", dim, reset)
+	sayf("  %scurl -fsSL https://raw.githubusercontent.com/%s/main/install.sh | sudo bash%s\n\n",
+		dim, repo, reset)
+
+	// Not a failure: it tells the menu there is nothing left to show.
+	return errRemoved
 }
+
+// errRemoved reports that the uninstall went through. It travels as an error
+// only because that is the one channel a menu action has back to its caller —
+// the menu stops on it and the dispatcher treats it as a clean exit.
+//
+// Cancelling at the confirmation returns nil instead, so the two outcomes stay
+// distinguishable: one means "nothing left to manage", the other "never mind".
+var errRemoved = errors.New("revpd has been removed")
 
 /* ----------------------------------------------------------------- glue --- */
 

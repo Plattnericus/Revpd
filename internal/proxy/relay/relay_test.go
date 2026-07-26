@@ -79,10 +79,10 @@ func (p *fakePolicy) hint() string {
 
 // fakeLogin stands in for the RDP-native login.
 type fakeLogin struct {
-	mu     sync.Mutex
-	calls  int
-	err    error
-	sawCR  []byte
+	mu    sync.Mutex
+	calls int
+	err   error
+	sawCR []byte
 }
 
 func (l *fakeLogin) Run(_ context.Context, conn net.Conn, cr *x224.ConnectionRequest, _ net.IP) (string, error) {

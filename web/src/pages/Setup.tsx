@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useSession } from '../lib/session'
 import { AnimatePresence, motion } from 'framer-motion'
 import QRCode from 'qrcode'
 import { ArrowRight, Check, Copy, Monitor, Shield, ShieldCheck, Terminal } from 'lucide-react'
@@ -18,22 +19,22 @@ type Step = 'admin' | 'enroll' | 'target' | 'done'
 
 export function Setup() {
   const nav = useNavigate()
+  const { refresh } = useSession()
 
   const [step, setStep] = useState<Step>('admin')
   const [gateway, setGateway] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  // Checked once: if the gateway is already configured, nobody should be here.
+  // Whether anyone belongs on this page at all is the guard's decision — it
+  // is asked before this renders. All that is wanted here is the gateway
+  // address to show on the last step.
   useEffect(() => {
     api
       .setupStatus()
-      .then((s) => {
-        if (!s.setup_required) nav('/login', { replace: true })
-        setGateway(s.gateway ?? '')
-      })
+      .then((s) => setGateway(s.gateway ?? ''))
       .catch(() => {})
-  }, [nav])
+  }, [])
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)
@@ -85,7 +86,15 @@ export function Setup() {
             {step === 'target' && (
               <TargetStep busy={busy} run={run} onDone={() => setStep('done')} onSkip={() => setStep('done')} />
             )}
-            {step === 'done' && <DoneStep gateway={gateway} onFinish={() => nav('/', { replace: true })} />}
+            {step === 'done' && (
+              <DoneStep
+                gateway={gateway}
+                onFinish={async () => {
+                  await refresh()
+                  nav('/', { replace: true })
+                }}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
 

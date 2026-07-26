@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -18,9 +19,9 @@ func TestUninstallPlanCoversEverything(t *testing.T) {
 	}
 
 	want := []string{
-		"/usr/local/bin/revpd",             // the program
-		"/etc/revpd",                       // master key and config
-		"/var/lib/revpd",                   // database
+		"/usr/local/bin/revpd",              // the program
+		"/etc/revpd",                        // master key and config
+		"/var/lib/revpd",                    // database
 		"/etc/systemd/system/revpd.service", // the unit
 	}
 	for _, w := range want {
@@ -289,4 +290,42 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// The self-updater installs two more units. Leaving them behind would leave a
+// path unit watching a directory that no longer exists, and systemd would
+// complain about it on every boot.
+func TestUninstallRemovesTheUpdaterUnits(t *testing.T) {
+	steps, err := uninstallPlan("/var/lib/revpd", false)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+
+	for _, unit := range []string{installUpdatePath, installUpdateService} {
+		if !planTouchesPath(steps, unit) {
+			t.Errorf("the plan never removes %s", unit)
+		}
+	}
+}
+
+// Uninstalling reports success through errRemoved so the menu knows to stop:
+// dropping back to a list of things to manage, with nothing left to manage
+// them with, is the one outcome that must not happen.
+func TestRemovedIsDistinguishableFromFailure(t *testing.T) {
+	if errRemoved == nil {
+		t.Fatal("errRemoved is nil, so the menu cannot recognise a finished uninstall")
+	}
+	if !errors.Is(errRemoved, errRemoved) {
+		t.Fatal("errors.Is does not match errRemoved")
+	}
+
+	// It must not swallow real failures: anything else has to stay an error.
+	if errors.Is(errors.New("disk full"), errRemoved) {
+		t.Fatal("an unrelated failure is being treated as a completed uninstall")
+	}
+
+	// And cancelling returns nil, which is neither.
+	if errors.Is(nil, errRemoved) {
+		t.Fatal("a cancelled uninstall would be read as a completed one")
+	}
 }

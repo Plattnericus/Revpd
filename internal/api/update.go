@@ -24,6 +24,13 @@ func (s *Server) WithUpdates(m *update.Manager, version string) *Server {
 	return s
 }
 
+// WithPortal records the address the portal actually bound, so the interface
+// can show the URL that works rather than the one that was configured.
+func (s *Server) WithPortal(addr string) *Server {
+	s.portalAddr = addr
+	return s
+}
+
 /* --------------------------------------------------------------- status --- */
 
 func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {

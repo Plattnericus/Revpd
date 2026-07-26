@@ -7,21 +7,30 @@ import (
 	"github.com/plattnericus/revpd/internal/config"
 )
 
-// Exactly two ports face the internet: the RDP relay and the portal. Both are
-// reachable by default, and nothing else is opened.
-func TestTwoListenersAndNoMore(t *testing.T) {
+// What listens out of the box, and nothing beyond it.
+//
+// Two ports carry traffic — the RDP relay and the portal — on the numbers a
+// client assumes so neither has to be typed. Port 80 is a third socket but not
+// a third service: it answers every request with a redirect to the portal and
+// serves nothing, so that someone who omits https:// still arrives.
+func TestWhatListensByDefault(t *testing.T) {
 	cfg := config.Defaults()
 
 	if cfg.Relay.Listen != ":3389" {
 		t.Fatalf("relay.listen = %q, want :3389", cfg.Relay.Listen)
 	}
-	if cfg.Web.Listen != ":8443" {
-		t.Fatalf("web.listen = %q, want :8443", cfg.Web.Listen)
+	if cfg.Web.Listen != ":443" {
+		t.Fatalf("web.listen = %q, want :443", cfg.Web.Listen)
+	}
+	if cfg.Web.HTTPListen != ":80" {
+		t.Fatalf("web.http_listen = %q, want :80", cfg.Web.HTTPListen)
 	}
 
-	// The remaining listener is opt-in and must stay off.
+	// The remaining listener is opt-in and must stay off: it would be a real
+	// fourth service, and it needs a certificate from a public CA to be any
+	// use at all.
 	if cfg.RDGW.Enabled {
-		t.Fatal("the RD gateway listener is on by default; that would be a third port")
+		t.Fatal("the RD gateway listener is on by default")
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("the shipped defaults do not validate: %v", err)

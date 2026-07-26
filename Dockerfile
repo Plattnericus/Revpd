@@ -41,12 +41,14 @@ FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /revpd /usr/local/bin/revpd
 
-# Binding 3389 and 443 needs a privileged port, so the container is normally
-# run with --cap-add NET_BIND_SERVICE rather than as root.
+# The portal defaults to 443 and the HTTP redirect to 80, both privileged, so
+# the container is run with --cap-add NET_BIND_SERVICE rather than as root.
+# Without that capability the configured fallbacks (8443, 9443 / 8080, 9080)
+# are taken instead and the log says which.
 USER nonroot:nonroot
 
 VOLUME ["/var/lib/revpd"]
-EXPOSE 3389 8443
+EXPOSE 80 443 3389 8443
 
 ENTRYPOINT ["/usr/local/bin/revpd"]
 CMD ["serve", "-c", "/etc/revpd/revpd.yaml"]

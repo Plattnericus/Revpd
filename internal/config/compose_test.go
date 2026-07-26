@@ -79,11 +79,11 @@ func TestDockerfileBuildsStatically(t *testing.T) {
 	text := string(repoFile(t, "Dockerfile"))
 
 	for _, want := range []string{
-		"CGO_ENABLED=0",              // static, no libc on distroless
-		"AS web",                     // frontend stage
-		"AS build",                   // binary stage
-		"distroless",                 // runtime base
-		"USER nonroot",               // not root
+		"CGO_ENABLED=0",                     // static, no libc on distroless
+		"AS web",                            // frontend stage
+		"AS build",                          // binary stage
+		"distroless",                        // runtime base
+		"USER nonroot",                      // not root
 		"--from=web /src/internal/web/dist", // frontend reaches the embed
 	} {
 		if !strings.Contains(text, want) {

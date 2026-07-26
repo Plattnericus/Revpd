@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -44,7 +45,15 @@ func runMenu() error {
 			continue
 		}
 
-		if err := items[idx].action(); err != nil {
+		err := items[idx].action()
+
+		// Uninstalling leaves nothing to manage — and no binary to manage it
+		// with. Dropping back to the menu would offer choices that cannot
+		// work, so this is where the menu ends.
+		if errors.Is(err, errRemoved) {
+			return nil
+		}
+		if err != nil {
 			sayf("\n  %serror:%s %v\n", rd, reset, err)
 		}
 		pause()
@@ -181,7 +190,15 @@ func menuUsers() error {
 		if !ok {
 			continue
 		}
-		if err := items[idx].action(); err != nil {
+		err := items[idx].action()
+
+		// Uninstalling leaves nothing to manage — and no binary to manage it
+		// with. Dropping back to the menu would offer choices that cannot
+		// work, so this is where the menu ends.
+		if errors.Is(err, errRemoved) {
+			return nil
+		}
+		if err != nil {
 			sayf("\n  %serror:%s %v\n", rd, reset, err)
 		}
 		pause()
@@ -213,7 +230,15 @@ func menuTargets() error {
 		if !ok {
 			continue
 		}
-		if err := items[idx].action(); err != nil {
+		err := items[idx].action()
+
+		// Uninstalling leaves nothing to manage — and no binary to manage it
+		// with. Dropping back to the menu would offer choices that cannot
+		// work, so this is where the menu ends.
+		if errors.Is(err, errRemoved) {
+			return nil
+		}
+		if err != nil {
 			sayf("\n  %serror:%s %v\n", rd, reset, err)
 		}
 		pause()

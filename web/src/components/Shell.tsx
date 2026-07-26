@@ -4,6 +4,8 @@ import { Activity, LayoutGrid, LogOut, Monitor, Moon, Settings2, Shield, Sun, Us
 import type { ReactNode } from 'react'
 import { useTheme, cx } from './ui'
 import { LanguagePicker } from './LanguagePicker'
+import { api } from '../lib/api'
+import { useSession } from '../lib/session'
 import { useT } from '../lib/lang'
 import type { Key } from '../lib/i18n'
 
@@ -19,8 +21,20 @@ export function Shell({ children }: { children: ReactNode }) {
   const { theme, toggle } = useTheme()
   const { pathname } = useLocation()
   const t = useT()
+  const { forget } = useSession()
 
   const current = nav.find((n) => (n.end ? pathname === n.to : pathname.startsWith(n.to)))
+
+  const signOut = async () => {
+    // Drop the local session either way: if the request failed the cookie may
+    // still be good, but leaving someone looking at a signed-in page they
+    // asked to leave is the worse outcome. The guard redirects from here.
+    try {
+      await api.logout()
+    } finally {
+      forget()
+    }
+  }
 
   return (
     <div className="flex h-full">
@@ -72,14 +86,19 @@ export function Shell({ children }: { children: ReactNode }) {
             {theme === 'dark' ? <Sun size={16} strokeWidth={1.75} /> : <Moon size={16} strokeWidth={1.75} />}
             {theme === 'dark' ? t('nav.theme.light') : t('nav.theme.dark')}
           </button>
-          <NavLink
-            to="/login"
+          {/*
+            Signing out has to reach the server: navigating to /login on its
+            own would leave the session alive, and the guard would simply send
+            an authenticated user back to the overview.
+          */}
+          <button
+            onClick={signOut}
             className="flex items-center gap-2.5 rounded-[8px] px-2.5 py-[7px] text-[13.5px] font-medium hover:bg-[var(--fill)]"
             style={{ color: 'var(--text-secondary)' }}
           >
             <LogOut size={16} strokeWidth={1.75} />
             {t('nav.logout')}
-          </NavLink>
+          </button>
         </div>
       </aside>
 

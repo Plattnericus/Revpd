@@ -151,9 +151,9 @@ func buildTestConnectInitial(channelNames []string, requestedProtocols uint32) [
 
 	// BER Connect Initial.
 	inner := &berWriter{}
-	inner.octetString([]byte{0x01})       // callingDomainSelector
-	inner.octetString([]byte{0x01})       // calledDomainSelector
-	inner.boolean(true)                   // upwardFlag
+	inner.octetString([]byte{0x01}) // callingDomainSelector
+	inner.octetString([]byte{0x01}) // calledDomainSelector
+	inner.boolean(true)             // upwardFlag
 	inner.tagged(berTagDomainParams, domainParameters())
 	inner.tagged(berTagDomainParams, domainParameters())
 	inner.tagged(berTagDomainParams, domainParameters())

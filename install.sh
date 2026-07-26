@@ -838,11 +838,18 @@ if [ ! -f "${CONF_DIR}/revpd.yaml" ]; then
 data_dir: ${DATA_DIR}
 
 web:
-  # The web interface. With relay.listen below, these are the only two ports
-  # that need to face the internet.
+  # The web interface, on the port a browser assumes so nobody has to type
+  # one. If something already uses 443, the first free fallback is taken and
+  # the log says which.
   #
   # Bind to 127.0.0.1 instead to reach it only through an SSH tunnel.
-  listen: ":8443"
+  listen: ":443"
+  listen_fallbacks: [":8443", ":9443"]
+
+  # Plain HTTP, answering everything with a redirect to the address above, so
+  # typing the hostname without https:// still works. Set to "" to turn off.
+  http_listen: ":80"
+  http_listen_fallbacks: [":8080", ":9080"]
 
   hostname: ${HOSTNAME_VALUE}
 
@@ -1009,61 +1016,62 @@ if [ "$UPGRADE" -eq 1 ]; then
     exit 0
 fi
 
-# A gateway with no account cannot be used, so offer to make one now.
-if [ "$INTERACTIVE" -eq 1 ]; then
-    step "Creating the first administrator"
-    say ""
-
-    ADMIN=$(ask "  Username:" "admin")
-    while :; do
-        PW1=$(ask_secret "  Password (at least 12 characters):")
-        if [ "${#PW1}" -lt 12 ]; then
-            warn "too short, try again"
-            continue
-        fi
-        PW2=$(ask_secret "  Repeat:")
-        [ "$PW1" = "$PW2" ] && break
-        warn "they do not match, try again"
-    done
-
-    ( set -a; . "${CONF_DIR}/.env"; set +a
-      printf '%s' "$PW1" | "${BIN_DIR}/revpd" useradd \
-          -c "${CONF_DIR}/revpd.yaml" -u "$ADMIN" -admin -password-stdin >/dev/null )
-    unset PW1 PW2
-    ok "created ${ADMIN}"
-
-    say ""
-    step "Enrolling the second factor"
-    say ""
-    ( set -a; . "${CONF_DIR}/.env"; set +a
-      "${BIN_DIR}/revpd" enroll -c "${CONF_DIR}/revpd.yaml" -u "$ADMIN" )
-fi
-
+# No account is created here on purpose.
+#
+# Enrolling a second factor means scanning a QR code, and a terminal is a poor
+# place to show one — worse over SSH, worse still when the installer is piped
+# into bash and has no clean hold on the terminal. The browser does it properly:
+# a real QR code, backup codes that can be copied, and a code typed back to
+# prove the authenticator works before the account is finished.
+#
+# So the gateway starts with no accounts, and the first person to open it is
+# taken through the wizard. Until they finish, that wizard is the only thing
+# the portal will serve.
 chown -R "$USER_NAME":"$USER_NAME" "$DATA_DIR"
 systemctl start revpd
 ok "revpd is running"
 
 # ----------------------------------------------------------- next steps ----
 
-HOST=$(grep -m1 '^  hostname:' "${CONF_DIR}/revpd.yaml" | awk '{print $2}')
+# Read the ports back out of the configuration rather than repeating them, so
+# this can never disagree with what the service is actually listening on.
+yaml_value() {
+    grep -m1 "^  $1:" "${CONF_DIR}/revpd.yaml" 2>/dev/null \
+        | sed -e 's/^[^:]*:[[:space:]]*//' -e 's/^"//' -e 's/"$//' || true
+}
+
+HOST=$(yaml_value hostname)
+WEB_PORT=$(yaml_value listen | tr -d '":' )
+RELAY_PORT=$(sed -n '/^relay:/,/^[a-z]/p' "${CONF_DIR}/revpd.yaml" \
+    | grep -m1 '^  listen:' | sed -e 's/.*:\([0-9]*\)".*/\1/' || true)
+[ -n "$RELAY_PORT" ] || RELAY_PORT=3389
+
+# The portal URL only needs a port when it is not the one browsers assume.
+PORTAL="https://${HOST}"
+[ "$WEB_PORT" = "443" ] || PORTAL="https://${HOST}:${WEB_PORT}"
 
 say ""
-say "  ${GREEN}${B}Done.${R}"
+say "  ${GREEN}${B}Installed.${R} Everything else happens in the browser."
 say ""
-say "  ${B}1. Add the machine you want to reach${R}"
-say "     ${DIM}revpd targetadd -name \"Office PC\" -ip 192.168.1.40 \\"
-say "                     -mac aa:bb:cc:dd:ee:ff -for ${ADMIN:-admin}${R}"
+say "  ${B}1. Open the gateway${R}"
+say "     ${B}${PORTAL}${R}"
+say "     ${DIM}It has no accounts yet, so it opens the setup wizard: you create"
+say "     your administrator there, scan the QR code with your authenticator"
+say "     app, and add the first machine. Nothing to type in this terminal.${R}"
 say ""
-say "  ${B}2. Forward two ports to this server${R}"
-say "     ${DIM}3389  Remote Desktop"
-say "     8443  web interface"
-say "     Nothing else. The target itself stays closed — see deploy/HARDENING.md.${R}"
+say "     ${DIM}The certificate is self-signed until you point web.tls_cert at a"
+say "     real one, so the browser warns once. That is expected.${R}"
 say ""
-say "  ${B}3. Connect${R}"
-say "     ${DIM}Remote Desktop → ${HOST}"
-say "     Password field: YourPassword,123456${R}"
+say "  ${B}2. Forward these to this server${R}"
+say "     ${DIM}${RELAY_PORT}  Remote Desktop"
+say "     ${WEB_PORT}${WEB_PORT:+   }web interface"
+say "     Nothing else. The machine you connect to stays closed to the"
+say "     internet — that is the point. See deploy/HARDENING.md.${R}"
 say ""
-say "  Web interface: ${B}https://${HOST}:8443${R}"
-say "  ${DIM}Self-signed for now, so the browser will warn once.${R}"
-say "  Logs:          ${DIM}journalctl -u revpd -f${R}"
+say "  ${B}3. Connect from Remote Desktop${R}"
+say "     ${DIM}Computer: ${HOST}"
+say "     Password field: YourPassword,123456  ${R}${DIM}(your password, comma, the code)${R}"
+say ""
+say "  ${DIM}Logs:    journalctl -u revpd -f"
+say "  Manage:  revpd${R}"
 say ""

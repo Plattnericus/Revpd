@@ -132,14 +132,14 @@ func parseNegRequest(variable []byte) negRequest {
 func writeConnectionConfirm(w io.Writer, selected uint32) error {
 	// x224Crq: length indicator, CC code, dst-ref, src-ref, class.
 	body := []byte{
-		0x0E,             // length indicator: 14 bytes follow
-		0xD0,             // CC TPDU
-		0x00, 0x00,       // dst-ref
-		0x00, 0x00,       // src-ref
-		0x00,             // class 0
-		negTypeRsp,       // RDP_NEG_RSP
-		0x00,             // flags
-		0x08, 0x00,       // length, always 8
+		0x0E,       // length indicator: 14 bytes follow
+		0xD0,       // CC TPDU
+		0x00, 0x00, // dst-ref
+		0x00, 0x00, // src-ref
+		0x00,       // class 0
+		negTypeRsp, // RDP_NEG_RSP
+		0x00,       // flags
+		0x08, 0x00, // length, always 8
 		0x00, 0x00, 0x00, 0x00, // selectedProtocol, filled below
 	}
 	binary.LittleEndian.PutUint32(body[11:15], selected)

@@ -34,6 +34,20 @@ type Web struct {
 	// session cookie is never handed out in the clear.
 	Listen string `yaml:"listen"`
 
+	// ListenFallbacks are tried in order when Listen is already taken.
+	//
+	// 443 is what people expect to type, but on a machine that already runs a
+	// web server it is spoken for. Refusing to start would be correct and
+	// useless; moving to the next port and saying so is neither.
+	ListenFallbacks []string `yaml:"listen_fallbacks"`
+
+	// HTTPListen answers plain HTTP with a permanent redirect to the portal,
+	// so somebody who types the hostname without https:// still arrives.
+	// It serves nothing else. Empty turns it off.
+	HTTPListen string `yaml:"http_listen"`
+
+	HTTPListenFallbacks []string `yaml:"http_listen_fallbacks"`
+
 	// External name users type into the browser. Also the WebAuthn relying-party ID,
 	// so changing it invalidates every enrolled passkey.
 	Hostname string `yaml:"hostname"`
@@ -172,9 +186,15 @@ func Defaults() Config {
 	return Config{
 		DataDir: "/var/lib/revpd",
 		Web: Web{
-			Listen:   ":8443",
-			Hostname: "localhost",
-			ACME:     false,
+			// The ports a browser assumes. Binding them needs
+			// CAP_NET_BIND_SERVICE, which the unit file grants and nothing
+			// else — the service still runs unprivileged.
+			Listen:              ":443",
+			ListenFallbacks:     []string{":8443", ":9443"},
+			HTTPListen:          ":80",
+			HTTPListenFallbacks: []string{":8080", ":9080"},
+			Hostname:            "localhost",
+			ACME:                false,
 		},
 		Relay: Relay{
 			Listen:        ":3389",

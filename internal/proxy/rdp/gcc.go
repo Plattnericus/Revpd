@@ -126,7 +126,7 @@ func buildServerBlocks(cb *clientBlocks, selectedProtocol uint32) []byte {
 
 	// SC_CORE — MS-RDPBCGR 2.2.1.4.2.
 	core := make([]byte, 0, 12)
-	core = append(core, le32(0x00080004)...)      // RDP 5.0 and later
+	core = append(core, le32(0x00080004)...)       // RDP 5.0 and later
 	core = append(core, le32(selectedProtocol)...) // echo the negotiated protocol
 	core = append(core, le32(0)...)                // earlyCapabilityFlags
 	out = append(out, block(scCore, core)...)

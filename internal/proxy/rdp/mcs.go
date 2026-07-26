@@ -5,14 +5,14 @@ package rdp
 
 // DomainMCSPDU choices, shifted into the top six bits the way PER wants them.
 const (
-	mcsErectDomainRequest = 1 << 2  // 0x04
-	mcsDisconnectUltimatum = 8 << 2 // 0x20
-	mcsAttachUserRequest  = 10 << 2 // 0x28
-	mcsAttachUserConfirm  = 11 << 2 // 0x2C
-	mcsChannelJoinRequest = 14 << 2 // 0x38
-	mcsChannelJoinConfirm = 15 << 2 // 0x3C
-	mcsSendDataRequest    = 25 << 2 // 0x64
-	mcsSendDataIndication = 26 << 2 // 0x68
+	mcsErectDomainRequest  = 1 << 2  // 0x04
+	mcsDisconnectUltimatum = 8 << 2  // 0x20
+	mcsAttachUserRequest   = 10 << 2 // 0x28
+	mcsAttachUserConfirm   = 11 << 2 // 0x2C
+	mcsChannelJoinRequest  = 14 << 2 // 0x38
+	mcsChannelJoinConfirm  = 15 << 2 // 0x3C
+	mcsSendDataRequest     = 25 << 2 // 0x64
+	mcsSendDataIndication  = 26 << 2 // 0x68
 )
 
 // Confirm PDUs carry a two-bit option field alongside the choice.

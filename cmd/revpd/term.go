@@ -39,10 +39,14 @@ func isTTY(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
 // pipe, and equally pointless if nobody can see the question.
 func isInteractive() bool { return isTTY(os.Stdin) && isTTY(os.Stdout) }
 
-func sayf(format string, args ...any)  { fmt.Printf(format, args...) }
-func step(s string)                    { fmt.Printf("\n%s==>%s %s%s%s\n", blue, reset, bold, s, reset) }
-func okf(format string, args ...any)   { fmt.Printf("  %s✓%s %s\n", green, reset, fmt.Sprintf(format, args...)) }
-func warnf(format string, args ...any) { fmt.Printf("  %s!%s %s\n", yellow, reset, fmt.Sprintf(format, args...)) }
+func sayf(format string, args ...any) { fmt.Printf(format, args...) }
+func step(s string)                   { fmt.Printf("\n%s==>%s %s%s%s\n", blue, reset, bold, s, reset) }
+func okf(format string, args ...any) {
+	fmt.Printf("  %s✓%s %s\n", green, reset, fmt.Sprintf(format, args...))
+}
+func warnf(format string, args ...any) {
+	fmt.Printf("  %s!%s %s\n", yellow, reset, fmt.Sprintf(format, args...))
+}
 
 /* -------------------------------------------------------------- prompts --- */
 
