@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/plattnericus/revpd/internal/netcheck"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,6 +17,7 @@ type Config struct {
 	DataDir string `yaml:"data_dir"`
 
 	Web      Web      `yaml:"web"`
+	Public   Public   `yaml:"public"`
 	Relay    Relay    `yaml:"relay"`
 	Grant    Grant    `yaml:"grant"`
 	RDPLogin RDPLogin `yaml:"rdp_login"`
@@ -59,6 +62,56 @@ type Web struct {
 	// Set only when something like nginx sits in front. Trusting these blindly
 	// would let anyone spoof their source IP and steal a grant.
 	TrustedProxies []string `yaml:"trusted_proxies"`
+}
+
+// Public describes the gateway as the internet sees it, which is never what
+// the listening sockets see.
+//
+// Behind a router the sockets only know the LAN: the address people actually
+// type, and the port the router forwards, both live on the far side of the
+// NAT. Everything here exists to close that gap — so the portal can say "point
+// Remote Desktop at this" and be right.
+//
+// None of it is ever consulted to decide whether a connection may proceed.
+// Some of it comes from a third party, and a third party can lie.
+type Public struct {
+	// Host is the domain or address people type. A bare name or address, no
+	// scheme and no port — the ports below cover the forwarding.
+	//
+	// Set this and it wins over anything detected, which is what a fixed
+	// domain or a dynamic-DNS name is for. Leave it empty and the detected
+	// address is used instead.
+	Host string `yaml:"host"`
+
+	// Detect asks the outside world what address it sees. Off means the
+	// gateway never mentions itself to a third party, and only Host is used.
+	//
+	// A machine with a public address on one of its own interfaces — any VPS —
+	// is answered from the interface and nobody is asked either way.
+	Detect bool `yaml:"detect"`
+
+	// Resolvers answer with the caller's address and nothing else. Asked in
+	// parallel, and two have to agree before an answer is believed, so one
+	// endpoint going bad cannot move the result on its own.
+	//
+	// HTTPS only. Over plain HTTP anyone on the path could choose the address
+	// the portal then hands out.
+	Resolvers []string `yaml:"resolvers"`
+
+	// Refresh is how often to look again. Home connections change address, so
+	// this is not a startup-only question.
+	Refresh time.Duration `yaml:"refresh"`
+
+	// RDPPort is the port on the router that forwards to relay.listen. Zero
+	// means it forwards the same number through, which is the usual case.
+	//
+	// It exists because the two need not match: forwarding some high port to
+	// 3389 keeps the internet's background scan of 3389 off the door, and the
+	// address the portal prints has to say so.
+	RDPPort int `yaml:"rdp_port"`
+
+	// PortalPort is the same idea for the web interface.
+	PortalPort int `yaml:"portal_port"`
 }
 
 type Relay struct {
@@ -206,6 +259,20 @@ func Defaults() Config {
 			Hostname:            "localhost",
 			ACME:                false,
 		},
+		Public: Public{
+			Detect: true,
+
+			// Three, so two can agree and one can be down. They answer with a
+			// bare address and nothing else, which is the whole requirement.
+			// Replace them with anything that does the same — including
+			// something you run yourself, if asking strangers is not welcome.
+			Resolvers: []string{
+				"https://api.ipify.org",
+				"https://icanhazip.com",
+				"https://ifconfig.co/ip",
+			},
+			Refresh: time.Hour,
+		},
 		Relay: Relay{
 			Listen:        ":3389",
 			Tarpit:        5 * time.Second,
@@ -326,6 +393,29 @@ func (c *Config) applyEnv() {
 			*dst = false
 		}
 	}
+	integer := func(key string, dst *int) {
+		if v := os.Getenv(key); v != "" {
+			// A value that is not a number is left to Validate, which can say
+			// which setting it was rather than failing silently here.
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				*dst = n
+			}
+		}
+	}
+	list := func(key string, dst *[]string) {
+		v, ok := os.LookupEnv(key)
+		if !ok {
+			return
+		}
+		// An empty value clears the list rather than being ignored, so a
+		// deployment can switch detection sources off from the environment.
+		*dst = nil
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				*dst = append(*dst, p)
+			}
+		}
+	}
 
 	str("REVPD_DATA_DIR", &c.DataDir)
 	str("REVPD_WEB_LISTEN", &c.Web.Listen)
@@ -333,6 +423,12 @@ func (c *Config) applyEnv() {
 	str("REVPD_TLS_CERT", &c.Web.TLSCert)
 	str("REVPD_TLS_KEY", &c.Web.TLSKey)
 	boolean("REVPD_ACME", &c.Web.ACME)
+	str("REVPD_PUBLIC_HOST", &c.Public.Host)
+	boolean("REVPD_PUBLIC_DETECT", &c.Public.Detect)
+	list("REVPD_PUBLIC_RESOLVERS", &c.Public.Resolvers)
+	dur("REVPD_PUBLIC_REFRESH", &c.Public.Refresh)
+	integer("REVPD_PUBLIC_RDP_PORT", &c.Public.RDPPort)
+	integer("REVPD_PUBLIC_PORTAL_PORT", &c.Public.PortalPort)
 	str("REVPD_RELAY_LISTEN", &c.Relay.Listen)
 	dur("REVPD_GRANT_TTL", &c.Grant.TTL)
 	dur("REVPD_GRANT_REUSE_WINDOW", &c.Grant.ReuseWindow)
@@ -388,6 +484,112 @@ func (c Config) PortalIsPublic() bool {
 	return ip == nil || !ip.IsLoopback()
 }
 
+/* -------------------------------------------------------------- public --- */
+
+// RelayPort is the port Remote Desktop connections arrive on locally.
+func (c Config) RelayPort() int { return portOf(c.Relay.Listen, 3389) }
+
+// PortalPort is the port the web interface listens on locally. It is not
+// necessarily where it ended up: the fallback moves it when the port is taken,
+// and that address is known only at runtime.
+func (c Config) PortalPort() int { return portOf(c.Web.Listen, 443) }
+
+// PublicRDPPort is what somebody outside types after the address. Zero in the
+// config means the router forwards the port through unchanged, which is both
+// the default and the usual case.
+func (c Config) PublicRDPPort() int {
+	if c.Public.RDPPort > 0 {
+		return c.Public.RDPPort
+	}
+	return c.RelayPort()
+}
+
+// PublicPortalPort is the same for the web interface.
+func (c Config) PublicPortalPort() int {
+	if c.Public.PortalPort > 0 {
+		return c.Public.PortalPort
+	}
+	return c.PortalPort()
+}
+
+// PublicHost is the configured public name, falling back to web.hostname.
+//
+// The fallback matters: an installation that set a real hostname and never
+// touched public.host is already correct, and should not have to say the same
+// thing twice.
+func (c Config) PublicHost() string {
+	if h := strings.TrimSpace(c.Public.Host); h != "" {
+		return h
+	}
+	if h := strings.TrimSpace(c.Web.Hostname); h != "" && h != "localhost" {
+		return h
+	}
+	return ""
+}
+
+func portOf(listen string, fallback int) int {
+	_, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return fallback
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n <= 0 || n > 65535 {
+		return fallback
+	}
+	return n
+}
+
+// CheckPublicHost rejects anything that is not a bare hostname or address.
+//
+// A scheme or a port here would silently produce a broken connect string —
+// "https://gw.example.com:3389" is not something Remote Desktop can be given —
+// so it is refused with the fix rather than accepted and printed.
+func CheckPublicHost(v string) error {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	if strings.Contains(v, "://") {
+		return fmt.Errorf("%q must be a bare name or address, without https://", v)
+	}
+	if strings.ContainsAny(v, " \t\r\n/?#@") {
+		return fmt.Errorf("%q must be a bare name or address, with no path or spaces", v)
+	}
+	if net.ParseIP(v) != nil {
+		return nil
+	}
+	if _, _, err := net.SplitHostPort(v); err == nil {
+		return fmt.Errorf("%q must not include a port — set public.rdp_port instead", v)
+	}
+	if !validHostname(v) {
+		return fmt.Errorf("%q is not a valid hostname or IP address", v)
+	}
+	return nil
+}
+
+// validHostname checks the shape of a DNS name: labels of letters, digits and
+// hyphens, none of them starting or ending with one.
+func validHostname(v string) bool {
+	if len(v) > 253 {
+		return false
+	}
+	labels := strings.Split(v, ".")
+	for _, l := range labels {
+		if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' {
+			return false
+		}
+		for i := range len(l) {
+			ch := l[i]
+			switch {
+			case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z', ch >= '0' && ch <= '9', ch == '-':
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (c Config) Validate() error {
 	var problems []string
 
@@ -412,6 +614,31 @@ func (c Config) Validate() error {
 	}
 	if c.Relay.Listen == "" {
 		problems = append(problems, "relay.listen must be set")
+	}
+	if err := CheckPublicHost(c.Public.Host); err != nil {
+		problems = append(problems, "public.host: "+err.Error())
+	}
+	for _, r := range c.Public.Resolvers {
+		if err := netcheck.CheckResolver(r); err != nil {
+			problems = append(problems, "public.resolvers: "+err.Error())
+		}
+	}
+	if c.Public.RDPPort < 0 || c.Public.RDPPort > 65535 {
+		problems = append(problems, fmt.Sprintf("public.rdp_port %d is not a port number", c.Public.RDPPort))
+	}
+	if c.Public.PortalPort < 0 || c.Public.PortalPort > 65535 {
+		problems = append(problems, fmt.Sprintf("public.portal_port %d is not a port number", c.Public.PortalPort))
+	}
+	if c.Public.Detect {
+		if len(c.Public.Resolvers) == 0 {
+			problems = append(problems, "public.detect is on but public.resolvers is empty — there is nobody to ask")
+		}
+		if c.Public.Refresh < 5*time.Minute {
+			// These are somebody else's servers being asked a favour. An
+			// address does not change by the minute, and hammering them is
+			// how a free endpoint stops being free.
+			problems = append(problems, "public.refresh below 5m asks the resolvers far more often than the address can change")
+		}
 	}
 	if c.Grant.TTL <= 0 {
 		problems = append(problems, "grant.ttl must be positive")

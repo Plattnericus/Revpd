@@ -114,9 +114,13 @@ func (s *Server) handleSettingsSchema(w http.ResponseWriter, r *http.Request) {
 		"runtime": map[string]any{
 			"portal":         s.portalAddr,
 			"portal_url":     config.PortalURL(s.cfg.Web.Hostname, s.portalAddr),
-			"gateway":        s.gatewayAddr(),
+			"gateway":        s.gatewayAddr(r.Context()),
 			"restart_needed": s.restartPending(r.Context()),
 			"can_restart":    update.ApplierInstalled(),
+
+			// How the same gateway looks from the internet, which is the
+			// address worth showing on a page that is often open over the LAN.
+			"network": s.networkView(r.Context(), nil),
 		},
 	})
 }
@@ -180,6 +184,13 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 			serverError(w, err)
 			return
 		}
+	}
+
+	// The public host is only ever displayed or written into a .rdp file, so a
+	// change to it can take hold now instead of waiting for a restart that
+	// would drop every open desktop session.
+	if s.public != nil {
+		s.public.SetHost(s.wantedConfig(r.Context()).PublicHost())
 	}
 
 	changed := make([]string, 0, len(req.Values)+len(req.Reset))

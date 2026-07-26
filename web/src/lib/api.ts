@@ -197,6 +197,17 @@ export const api = {
 
   restart: () => post<{ ok: boolean; sessions_dropped: number }>('/api/admin/restart'),
 
+  /* -------------------------------------------------- from outside --- */
+
+  network: () => get<ApiNetwork>('/api/admin/network'),
+
+  /**
+   * Looks again. With `probe` it also knocks on our own public address,
+   * which opens connections rather than just asking a question — so it is
+   * a separate decision and never a side effect of loading the page.
+   */
+  checkNetwork: (probe = false) => post<ApiNetwork>('/api/admin/network/check', { probe }),
+
   /* ------------------------------------------------------ discovery --- */
 
   discoverRanges: () => get<{ ranges: ApiRange[]; limit: number }>('/api/admin/discover/ranges'),
@@ -335,7 +346,71 @@ export interface ApiHost {
   wakeable: boolean
 }
 
-export type SettingKind = 'bool' | 'int' | 'duration' | 'text' | 'addr' | 'addr_list'
+export type SettingKind =
+  | 'bool'
+  | 'int'
+  | 'duration'
+  | 'text'
+  | 'addr'
+  | 'addr_list'
+  | 'text_list'
+
+/*
+  How the gateway looks from the internet, which its own sockets cannot see:
+  behind a router they only ever know the LAN.
+
+  Display data throughout. Nothing here decides who may connect — part of it
+  comes from a third party, and a third party can lie.
+*/
+export interface ApiEndpoint {
+  /** What to type: host, plus the port when it is not the assumed one. */
+  address: string
+  host?: string
+  port?: number
+  /** The local socket this is forwarded to. */
+  listen?: string
+  /** The outside port differs from the inside one. */
+  forwarded: boolean
+}
+
+export interface ApiProbe {
+  address: string
+  reach: 'open' | 'refused' | 'timeout' | 'skipped' | 'error'
+  detail?: string
+  took_ms: number
+}
+
+export interface ApiNetwork {
+  /** The effective address: a configured domain, or the detected one. */
+  host: string
+  source?: 'configured' | 'interface' | 'resolver'
+  /** What an operator typed, kept apart so an override reads as one. */
+  configured?: string
+  /** What the outside world reported seeing, even when a domain is set. */
+  detected?: string
+  detected_source?: 'configured' | 'interface' | 'resolver'
+  /** How many resolvers returned the same address. */
+  agreed?: number
+  answers?: { resolver: string; ip?: string; error?: string }[]
+  checked_at?: string
+  /** Why there is no detected address. Advisory, never an outage. */
+  error?: string
+  /** The configured domain resolves somewhere other than here. */
+  mismatch?: string
+
+  rdp: ApiEndpoint
+  portal: ApiEndpoint
+  portal_url?: string
+  detecting: boolean
+
+  /** Present only once somebody has asked for a knock on our own address. */
+  reach?: {
+    rdp: ApiProbe
+    portal: ApiProbe
+    confirmed: boolean
+    checked_at: string
+  }
+}
 
 export interface ApiSetting {
   key: string
@@ -368,6 +443,7 @@ export interface ApiConfig {
     gateway: string
     restart_needed: boolean
     can_restart: boolean
+    network: ApiNetwork
   }
 }
 

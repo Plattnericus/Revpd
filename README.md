@@ -147,6 +147,23 @@ The MAC address is what wakes it. Any format works.
 Nothing else. Your Windows PC itself stays completely closed —
 [the firewall rules are here](deploy/HARDENING.md).
 
+Revpd works out what address that makes it reachable at, and the settings page
+shows what to type from outside. If you forwarded a *different* port — say
+`33890` to `3389`, which keeps the internet's constant scan of 3389 off your
+door — say so and every address it prints follows:
+
+```yaml
+public:
+  rdp_port: 33890     # connect to gw.example.com:33890
+```
+
+Have a domain, or a dynamic-DNS name? Put it in `public.host` and it wins over
+anything detected. Revpd keeps checking that it still points here, because a
+DynDNS record that quietly stopped following your connection is the difference
+between getting in from anywhere and finding out you cannot.
+
+[More on all of this below.](#reaching-it-from-anywhere)
+
 **3. On the Windows PC, turn off Fast Startup**
 
 ```powershell
@@ -217,6 +234,53 @@ activity log, and a wake button as a fallback.
 Ten languages, light and dark, works on a phone.
 
 ---
+
+## Reaching it from anywhere
+
+The plan is one port on the router and a desktop from anywhere, with a second
+factor in front of it. The gateway's own sockets are no help in setting that
+up: behind NAT they only ever see the LAN, so neither the address people type
+nor the port the router forwards is visible from in here.
+
+So Revpd works both out, and the settings page shows the result.
+
+**The address.** If a public address is bound to one of this machine's own
+interfaces — any VPS — that is the answer and nobody is asked. Otherwise the
+question goes to three small endpoints that reply with the caller's address,
+and **two of them have to agree** before the answer is used. One endpoint
+having a bad day, or a bad owner, cannot move the result on its own. They are
+`public.resolvers`, they must be HTTPS, and they can be anything that behaves
+the same — including something you run yourself.
+
+`public.detect: false` switches the whole thing off, and then this gateway
+never mentions itself to anybody.
+
+**Your own name instead.** Set `public.host` to a domain or a dynamic-DNS name
+and it wins over detection. Detection keeps running beside it for one reason:
+to notice when the name stops pointing here and say so, rather than letting you
+discover it from the wrong side of the internet.
+
+**The port.** `public.rdp_port` is what your router forwards to `relay.listen`.
+Leave it at `0` when the two match. Set it and every printed address follows —
+the connect string, the downloaded `.rdp` file, the CLI. `public.portal_port`
+does the same for the web interface.
+
+**Does it actually work?** *Test from outside* on the settings page knocks on
+your own public address. If it answers, the whole path is proven: forward,
+firewall, listener. If it does not, Revpd says *could not confirm* rather than
+*broken* — most routers refuse to connect back to themselves from the inside,
+so a failure here often means nothing at all. The real test is your phone on
+mobile data.
+
+> **None of this decides anything.** The public address is a display value:
+> it feeds the connect string and the `.rdp` file, and no grant, token or
+> forwarding decision ever reads it. That separation is deliberate — part of
+> the answer comes from a stranger, and a stranger can lie. What actually lets
+> a connection through is unchanged: a passed second factor, and nothing else.
+
+All of it is editable from **Settings → From the internet**, and changing the
+address or a port takes effect immediately — no restart, so nobody's open
+desktop session is dropped to correct a printed address.
 
 ## Staying current
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/plattnericus/revpd/internal/audit"
 	"github.com/plattnericus/revpd/internal/config"
+	"github.com/plattnericus/revpd/internal/netcheck"
 	"github.com/plattnericus/revpd/internal/store"
 	"github.com/plattnericus/revpd/internal/wol"
 )
@@ -406,6 +407,10 @@ func cmdConfig(args []string) error {
 	fmt.Printf("  Remote Desktop      %s\n", cfg.Relay.Listen)
 	fmt.Printf("  Data directory      %s\n", cfg.DataDir)
 	fmt.Println()
+
+	// What to forward on the router, and what to type from outside. Both are
+	// invisible from here — the sockets above only ever see the LAN.
+	printPublic(cfg)
 	fmt.Printf("  Login from RDP      %s\n", onOff(cfg.RDPLogin.Enabled))
 	fmt.Printf("  Push approvals      %s\n", onOff(cfg.JIT.Enabled))
 	fmt.Printf("  RD Gateway (443)    %s\n", onOff(cfg.RDGW.Enabled))
@@ -778,6 +783,32 @@ func since(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
 	}
+}
+
+// printPublic says what to forward on the router and what to type from
+// outside.
+//
+// Neither is visible from a listening socket: behind NAT they only ever see
+// the LAN. This prints what has been configured rather than looking anything
+// up — the command runs as whoever typed it, and a network round trip in the
+// middle of a status page is a command that hangs on a bad link.
+func printPublic(cfg config.Config) {
+	host := cfg.PublicHost()
+	if host == "" {
+		fmt.Printf("  Reached from        %snot set — see public.host, or the Settings page%s\n", dim, reset)
+		fmt.Println()
+		return
+	}
+
+	fmt.Printf("  Remote Desktop from %s\n", netcheck.JoinHostPort(host, cfg.PublicRDPPort(), 3389))
+	fmt.Printf("  Web interface from  https://%s\n", netcheck.JoinHostPort(host, cfg.PublicPortalPort(), 443))
+
+	// Only worth spelling out when the two differ, which is the case somebody
+	// has to have set up deliberately and may want to check.
+	if p := cfg.PublicRDPPort(); p != cfg.RelayPort() {
+		fmt.Printf("  Forward on router   %s%d → this machine %s%s\n", dim, p, cfg.Relay.Listen, reset)
+	}
+	fmt.Println()
 }
 
 func onOff(b bool) string {

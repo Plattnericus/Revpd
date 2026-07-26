@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { AlertTriangle, Info, RotateCcw, TriangleAlert } from 'lucide-react'
+import { AlertTriangle, Globe, Info, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Button, Card, Field, spring } from '../components/ui'
 import { UpdatePanel, useUpdateStatus } from '../components/UpdateCard'
-import { api, type ApiConfig, type ApiSetting } from '../lib/api'
+import { api, type ApiConfig, type ApiNetwork, type ApiSetting } from '../lib/api'
 import { useLang, useT } from '../lib/lang'
 import { settingLabel } from '../lib/i18n.settings'
 import type { Key } from '../lib/i18n'
@@ -121,6 +121,9 @@ export function Settings() {
           <Line label={t('settings.remoteDesktop')} value={cfg.runtime.gateway} />
         </div>
       </Card>
+
+      <PublicAddress initial={cfg.runtime.network} />
+
 
       {restartNeeded && (
         <Banner
@@ -422,6 +425,160 @@ function DurationField({
           </option>
         ))}
       </select>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------- from outside --- */
+
+/*
+  What to type from somewhere else, and what to forward on the router.
+
+  Neither is visible from a listening socket: behind NAT they only ever see the
+  LAN, so the address here comes from a configured domain or from asking a
+  machine on the far side. It is display data throughout — nothing on this card
+  decides who may connect.
+
+  The two buttons do different things on purpose. Checking asks again what our
+  address is; testing opens connections back to it, which is slower, noisier,
+  and inconclusive when it fails. Neither runs on its own.
+*/
+function PublicAddress({ initial }: { initial: ApiNetwork }) {
+  const t = useT()
+
+  const [net, setNet] = useState(initial)
+  const [busy, setBusy] = useState<'' | 'check' | 'probe'>('')
+  const [error, setError] = useState('')
+
+  // Saving the form reloads the whole configuration, and a changed domain
+  // arrives with it.
+  useEffect(() => setNet(initial), [initial])
+
+  const check = async (probe: boolean) => {
+    setBusy(probe ? 'probe' : 'check')
+    setError('')
+    try {
+      setNet(await api.checkNetwork(probe))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const source = net.configured
+    ? t('network.sourceConfigured')
+    : net.detecting
+      ? t('network.sourceDetected')
+      : t('network.detectOff')
+
+  return (
+    <Card>
+      <div className="flex items-start gap-2.5">
+        <Globe size={15} strokeWidth={2} className="mt-[3px] shrink-0" style={{ color: 'var(--text-secondary)' }} />
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[15px] font-semibold tracking-[-0.015em]">{t('network.title')}</h2>
+          <p className="mt-0.5 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
+            {t('network.hint')}
+          </p>
+        </div>
+      </div>
+
+      {net.host ? (
+        <div className="mt-3 flex flex-col gap-2">
+          <Endpoint
+            label={t('network.remoteDesktop')}
+            value={net.rdp.address}
+            forwardedTo={net.rdp.forwarded ? net.rdp.listen : undefined}
+          />
+          <Endpoint
+            label={t('network.webInterface')}
+            value={net.portal_url ?? net.portal.address}
+            forwardedTo={net.portal.forwarded ? net.portal.listen : undefined}
+          />
+        </div>
+      ) : (
+        <div
+          className="mt-3 rounded-[10px] px-3 py-2.5 text-[13px]"
+          style={{ background: 'var(--orange-soft)', color: 'var(--orange)' }}
+        >
+          <p className="font-medium">{t('network.unknown')}</p>
+          <p className="mt-0.5 opacity-80">{t('network.unknownHint')}</p>
+        </div>
+      )}
+
+      {/* A domain that stopped following the connection is the failure worth
+          catching here rather than while away from the machine. */}
+      {net.mismatch && (
+        <p
+          className="mt-2.5 flex items-start gap-1.5 rounded-[10px] px-3 py-2 text-[12.5px]"
+          style={{ background: 'var(--orange-soft)', color: 'var(--orange)' }}
+        >
+          <AlertTriangle size={12} strokeWidth={2} className="mt-[3px] shrink-0" />
+          {net.mismatch}
+        </p>
+      )}
+
+      {net.reach && (
+        <p
+          className="mt-2.5 rounded-[10px] px-3 py-2 text-[12.5px] leading-relaxed"
+          style={
+            net.reach.confirmed
+              ? { background: 'var(--green-soft)', color: 'var(--green)' }
+              : { background: 'var(--fill)', color: 'var(--text-secondary)' }
+          }
+        >
+          {net.reach.confirmed ? t('network.confirmed') : t('network.unconfirmed')}
+        </p>
+      )}
+
+      {(error || net.error) && (
+        <p className="mt-2 text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+          {error || net.error}
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="ghost" onClick={() => check(false)} disabled={busy !== ''}>
+          {busy === 'check' ? t('network.checking') : t('network.check')}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => check(true)} disabled={busy !== '' || !net.host}>
+          {busy === 'probe' ? t('network.checking') : t('network.testPorts')}
+        </Button>
+        <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+          {source}
+        </span>
+      </div>
+    </Card>
+  )
+}
+
+function Endpoint({
+  label,
+  value,
+  forwardedTo,
+}: {
+  label: string
+  value: string
+  forwardedTo?: string
+}) {
+  const t = useT()
+
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <span className="shrink-0 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+        {label}
+      </span>
+      <span className="min-w-0 text-right">
+        <code className="font-mono text-[13px] font-medium break-all">{value}</code>
+        {/* Only spelled out when the outside and inside ports differ, which is
+            the case somebody set up deliberately and may want to check. */}
+        {forwardedTo && (
+          <span className="mt-0.5 block font-mono text-[11.5px]" style={{ color: 'var(--text-tertiary)' }}>
+            {t('network.forwards')} {forwardedTo}
+          </span>
+        )}
+      </span>
     </div>
   )
 }

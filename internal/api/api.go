@@ -18,6 +18,7 @@ import (
 	"github.com/plattnericus/revpd/internal/config"
 	"github.com/plattnericus/revpd/internal/crypto"
 	"github.com/plattnericus/revpd/internal/mfa"
+	"github.com/plattnericus/revpd/internal/netcheck"
 	"github.com/plattnericus/revpd/internal/policy"
 	"github.com/plattnericus/revpd/internal/store"
 	"github.com/plattnericus/revpd/internal/update"
@@ -41,6 +42,10 @@ type Server struct {
 	// portalAddr is where the portal actually ended up, which is not always
 	// web.listen: the fallback moves it when the usual port is taken.
 	portalAddr string
+
+	// public knows how the gateway looks from the internet. Nil where nothing
+	// is detected, which leaves the configured hostname to speak for itself.
+	public *netcheck.Service
 
 	// fileCfg is the configuration as it came from revpd.yaml and the
 	// environment, before anything stored in the database was layered on. The
@@ -113,6 +118,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/admin/config", s.admin(s.handleSettingsSchema))
 	mux.Handle("POST /api/admin/config", s.admin(s.handleSettingsSave))
 	mux.Handle("POST /api/admin/restart", s.admin(s.handleRestart))
+
+	// How the gateway is reached from outside. Reading is enough to draw the
+	// connect address; looking again reaches out to a third party and opens
+	// connections, so that stays an administrator's decision.
+	mux.Handle("GET /api/admin/network", s.admin(s.handleNetwork))
+	mux.Handle("POST /api/admin/network/check", s.admin(s.handleNetworkCheck))
 
 	// Finding machines to add. Scanning reaches out to the local network, so
 	// it is an administrator's decision and nobody else's.
@@ -472,20 +483,16 @@ func (s *Server) handleTargets(w http.ResponseWriter, r *http.Request) {
 	for _, t := range targets {
 		out = append(out, s.view(r.Context(), t))
 	}
-	send(w, map[string]any{"targets": out, "gateway": s.gatewayAddr()})
+	send(w, map[string]any{"targets": out, "gateway": s.gatewayAddr(r.Context())})
 }
 
-// gatewayAddr is what the user types into mstsc. Derived from config, never
-// guessed from the request, so it stays correct behind a proxy.
-func (s *Server) gatewayAddr() string {
-	_, port, err := net.SplitHostPort(s.cfg.Relay.Listen)
-	if err != nil || port == "" {
-		port = "3389"
-	}
-	if port == "3389" {
-		return s.cfg.Web.Hostname
-	}
-	return net.JoinHostPort(s.cfg.Web.Hostname, port)
+// gatewayAddr is what the user types into mstsc.
+//
+// Derived from configuration and detection, never guessed from the request, so
+// it stays correct behind a proxy — and so a page served over the LAN still
+// prints the address that works from outside, which is the one worth having.
+func (s *Server) gatewayAddr(ctx context.Context) string {
+	return s.publicGateway(ctx)
 }
 
 func (s *Server) handleUnlock(w http.ResponseWriter, r *http.Request) {
@@ -506,7 +513,7 @@ func (s *Server) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	send(w, map[string]any{
 		"grant_id":   grantID,
 		"expires_in": int(s.cfg.Grant.TTL.Seconds()),
-		"gateway":    s.gatewayAddr(),
+		"gateway":    s.gatewayAddr(r.Context()),
 		"target":     s.view(r.Context(), *target),
 	})
 }
@@ -531,10 +538,12 @@ func (s *Server) handleRDPFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host := s.gatewayAddr()
-	if !strings.Contains(host, ":") {
-		host += ":3389"
-	}
+	// The file carries the port explicitly rather than letting the client
+	// assume 3389: the whole point of forwarding some other port on the router
+	// is that the assumption is wrong. Joined properly, so an IPv6 address
+	// comes out bracketed instead of turning into nonsense.
+	cfg := s.wantedConfig(r.Context())
+	host := net.JoinHostPort(s.publicHost(cfg), strconv.Itoa(cfg.PublicRDPPort()))
 
 	// CRLF and a .rdp filename, or mstsc will not open it.
 	body := strings.Join([]string{
@@ -916,7 +925,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	send(w, map[string]any{
 		"hostname":           s.cfg.Web.Hostname,
 		"relay_listen":       s.cfg.Relay.Listen,
-		"gateway":            s.gatewayAddr(),
+		"gateway":            s.gatewayAddr(r.Context()),
 		"grant_ttl_s":        int(s.cfg.Grant.TTL.Seconds()),
 		"reuse_window_s":     int(s.cfg.Grant.ReuseWindow.Seconds()),
 		"jit_enabled":        s.cfg.JIT.Enabled,

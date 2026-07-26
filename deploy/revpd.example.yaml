@@ -58,6 +58,71 @@ web:
   trusted_proxies: []
 
 
+public:
+  # How this gateway looks from the internet, which its own sockets cannot
+  # see: behind a router they only ever know the LAN.
+  #
+  # Everything here is a display value. It decides what the portal prints, what
+  # goes into a downloaded .rdp file and what the wake-up page tells people to
+  # type. No grant, no token and no forwarding decision reads any of it — which
+  # is what makes it safe for part of it to come from a stranger.
+
+  # The domain or address people type from outside. A bare name or address:
+  # no https:// in front, and no port on the end — the ports below cover that.
+  #
+  # Set this and it wins over anything detected, which is what a fixed domain
+  # or a dynamic-DNS name is for. Leave it empty and the detected address is
+  # used instead. Empty also falls back to web.hostname above, so an
+  # installation that already set a real hostname needs nothing here.
+  host: ""
+
+  # Ask the internet what address it sees.
+  #
+  # A machine with a public address on one of its own interfaces — any VPS —
+  # is answered from the interface and nobody is asked at all. Only a gateway
+  # behind NAT ever sends the question out.
+  #
+  # Turn it off and this gateway never mentions itself to a third party; only
+  # host above is then used.
+  detect: true
+
+  # Who to ask. They answer with the caller's address and nothing else.
+  #
+  # All three are asked at once and two have to agree before an answer is
+  # believed, so one endpoint going bad cannot move the result on its own.
+  # Replace them with anything that behaves the same — including something you
+  # run yourself, if asking strangers is not welcome.
+  #
+  # HTTPS only, and enforced. Over plain HTTP anyone on the path could choose
+  # the address the portal then hands out to everybody.
+  resolvers:
+    - https://api.ipify.org
+    - https://icanhazip.com
+    - https://ifconfig.co/ip
+
+  # How often to look again. Home connections change address without warning,
+  # so this is not a question to answer once at startup. Below 5m is rejected:
+  # an address does not change by the minute, and hammering a free endpoint is
+  # how it stops being free.
+  refresh: 1h
+
+  # The port on your router that forwards to relay.listen below.
+  #
+  # 0 means it forwards the same number straight through, which is the usual
+  # case and needs nothing here. Set it when the two differ — forwarding some
+  # high port to 3389 keeps the internet's constant scan of 3389 off the door,
+  # and the address the portal prints has to say so:
+  #
+  #     rdp_port: 33890     ->  connect to gw.example.com:33890
+  #
+  # This changes what is printed, not what is listened on. The forwarding rule
+  # itself lives in the router.
+  rdp_port: 0
+
+  # The same for the web interface.
+  portal_port: 0
+
+
 relay:
   # The one port that faces the internet. Everything arrives here.
   listen: ":3389"

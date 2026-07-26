@@ -17,6 +17,14 @@ import type { Lang } from './i18n'
 type Labels = Record<string, string>
 
 const en: Labels = {
+  // Reached from the internet
+  'public.host': 'Public address',
+  'public.detect': 'Detect it automatically',
+  'public.rdp_port': 'Remote Desktop port outside',
+  'public.portal_port': 'Web interface port outside',
+  'public.resolvers': 'Where to ask',
+  'public.refresh': 'Look again every',
+
   // Network
   'web.listen': 'Web interface',
   'web.listen_fallbacks': 'Alternative ports',
@@ -69,6 +77,14 @@ const en: Labels = {
 }
 
 const de: Labels = {
+  // Reached from the internet
+  'public.host': 'Öffentliche Adresse',
+  'public.detect': 'Automatisch erkennen',
+  'public.rdp_port': 'Remotedesktop-Port außen',
+  'public.portal_port': 'Weboberflächen-Port außen',
+  'public.resolvers': 'Wen fragen',
+  'public.refresh': 'Erneut prüfen alle',
+
   'web.listen': 'Weboberfläche',
   'web.listen_fallbacks': 'Ausweichports',
   'web.http_listen': 'Unverschlüsseltes HTTP',
@@ -114,6 +130,14 @@ const de: Labels = {
 }
 
 const fr: Labels = {
+  // Reached from the internet
+  'public.host': 'Adresse publique',
+  'public.detect': 'Détecter automatiquement',
+  'public.rdp_port': 'Port Bureau à distance côté Internet',
+  'public.portal_port': 'Port interface web côté Internet',
+  'public.resolvers': 'À qui demander',
+  'public.refresh': 'Revérifier toutes les',
+
   'web.listen': 'Interface web',
   'web.listen_fallbacks': 'Ports de secours',
   'web.http_listen': 'HTTP non chiffré',
@@ -159,6 +183,14 @@ const fr: Labels = {
 }
 
 const es: Labels = {
+  // Reached from the internet
+  'public.host': 'Dirección pública',
+  'public.detect': 'Detectarla automáticamente',
+  'public.rdp_port': 'Puerto de Escritorio remoto fuera',
+  'public.portal_port': 'Puerto de la interfaz web fuera',
+  'public.resolvers': 'A quién preguntar',
+  'public.refresh': 'Volver a mirar cada',
+
   'web.listen': 'Interfaz web',
   'web.listen_fallbacks': 'Puertos alternativos',
   'web.http_listen': 'HTTP sin cifrar',
@@ -204,6 +236,14 @@ const es: Labels = {
 }
 
 const it: Labels = {
+  // Reached from the internet
+  'public.host': 'Indirizzo pubblico',
+  'public.detect': 'Rilevalo automaticamente',
+  'public.rdp_port': 'Porta Desktop remoto esterna',
+  'public.portal_port': 'Porta interfaccia web esterna',
+  'public.resolvers': 'A chi chiedere',
+  'public.refresh': 'Ricontrolla ogni',
+
   'web.listen': 'Interfaccia web',
   'web.listen_fallbacks': 'Porte alternative',
   'web.http_listen': 'HTTP in chiaro',
@@ -249,6 +289,14 @@ const it: Labels = {
 }
 
 const nl: Labels = {
+  // Reached from the internet
+  'public.host': 'Openbaar adres',
+  'public.detect': 'Automatisch detecteren',
+  'public.rdp_port': 'Extern bureaublad-poort buiten',
+  'public.portal_port': 'Webinterface-poort buiten',
+  'public.resolvers': 'Wie te vragen',
+  'public.refresh': 'Opnieuw kijken elke',
+
   'web.listen': 'Webinterface',
   'web.listen_fallbacks': 'Uitwijkpoorten',
   'web.http_listen': 'Onversleuteld HTTP',
@@ -294,6 +342,14 @@ const nl: Labels = {
 }
 
 const pl: Labels = {
+  // Reached from the internet
+  'public.host': 'Adres publiczny',
+  'public.detect': 'Wykrywaj automatycznie',
+  'public.rdp_port': 'Zewnętrzny port pulpitu zdalnego',
+  'public.portal_port': 'Zewnętrzny port interfejsu webowego',
+  'public.resolvers': 'Kogo pytać',
+  'public.refresh': 'Sprawdzaj ponownie co',
+
   'web.listen': 'Interfejs webowy',
   'web.listen_fallbacks': 'Porty zapasowe',
   'web.http_listen': 'Nieszyfrowany HTTP',
@@ -339,6 +395,14 @@ const pl: Labels = {
 }
 
 const pt: Labels = {
+  // Reached from the internet
+  'public.host': 'Endereço público',
+  'public.detect': 'Detetar automaticamente',
+  'public.rdp_port': 'Porta do ambiente de trabalho remoto no exterior',
+  'public.portal_port': 'Porta da interface web no exterior',
+  'public.resolvers': 'A quem perguntar',
+  'public.refresh': 'Verificar de novo a cada',
+
   'web.listen': 'Interface web',
   'web.listen_fallbacks': 'Portas alternativas',
   'web.http_listen': 'HTTP sem cifra',
@@ -384,6 +448,14 @@ const pt: Labels = {
 }
 
 const tr: Labels = {
+  // Reached from the internet
+  'public.host': 'Genel adres',
+  'public.detect': 'Otomatik algıla',
+  'public.rdp_port': 'Dıştaki Uzak Masaüstü bağlantı noktası',
+  'public.portal_port': 'Dıştaki web arayüzü bağlantı noktası',
+  'public.resolvers': 'Kime sorulacak',
+  'public.refresh': 'Şu sıklıkta yeniden bak',
+
   'web.listen': 'Web arayüzü',
   'web.listen_fallbacks': 'Yedek bağlantı noktaları',
   'web.http_listen': 'Şifresiz HTTP',
@@ -429,6 +501,14 @@ const tr: Labels = {
 }
 
 const ru: Labels = {
+  // Reached from the internet
+  'public.host': 'Публичный адрес',
+  'public.detect': 'Определять автоматически',
+  'public.rdp_port': 'Внешний порт удалённого рабочего стола',
+  'public.portal_port': 'Внешний порт веб-интерфейса',
+  'public.resolvers': 'У кого спрашивать',
+  'public.refresh': 'Проверять снова каждые',
+
   'web.listen': 'Веб-интерфейс',
   'web.listen_fallbacks': 'Запасные порты',
   'web.http_listen': 'Незашифрованный HTTP',

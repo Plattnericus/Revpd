@@ -25,6 +25,7 @@ import (
 	"github.com/plattnericus/revpd/internal/crypto"
 	"github.com/plattnericus/revpd/internal/mfa"
 	"github.com/plattnericus/revpd/internal/mfa/duo"
+	"github.com/plattnericus/revpd/internal/netcheck"
 	"github.com/plattnericus/revpd/internal/policy"
 	"github.com/plattnericus/revpd/internal/proxy/rdp"
 	"github.com/plattnericus/revpd/internal/proxy/relay"
@@ -340,10 +341,26 @@ func cmdServe(args []string) error {
 			"refused", strings.Join(portal.Tried, "; "))
 	}
 
+	// How the gateway looks from the internet, which its own sockets cannot
+	// see: behind a router they only ever know the LAN. Display only — the
+	// connect address, the .rdp file, the port-forward hint — and no
+	// forwarding decision reads it, which is what makes it safe for part of
+	// the answer to come from a stranger.
+	publicAddr := netcheck.NewService(netcheck.ServiceOptions{
+		Host:    cfg.PublicHost(),
+		Detect:  cfg.Public.Detect,
+		Refresh: cfg.Public.Refresh,
+		Detector: netcheck.New(netcheck.Options{
+			Resolvers: cfg.Public.Resolvers,
+		}),
+	})
+	go publicAddr.Run(ctx)
+
 	// Web portal.
 	apiSrv := api.New(db, log, cfg, authMgr, engine, sealer, web.Handler()).
 		WithUpdates(updater, version).
 		WithPortal(portal.Addr).
+		WithPublic(publicAddr).
 		WithFileConfig(fileCfg)
 	httpSrv := &http.Server{
 		Handler:           apiSrv.Handler(),
@@ -397,6 +414,7 @@ func cmdServe(args []string) error {
 		"portal_url", config.PortalURL(cfg.Web.Hostname, portal.Addr),
 		"relay", cfg.Relay.Listen,
 		"hostname", cfg.Web.Hostname,
+		"connect_from", netcheck.JoinHostPort(cfg.PublicHost(), cfg.PublicRDPPort(), 3389),
 		"jit", cfg.JIT.Enabled)
 
 	select {

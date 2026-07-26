@@ -74,7 +74,7 @@ func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 	send(w, map[string]any{
 		"setup_required": needed,
 		"hostname":       s.cfg.Web.Hostname,
-		"gateway":        s.gatewayAddr(),
+		"gateway":        s.gatewayAddr(r.Context()),
 		"csrf":           csrf,
 
 		// Whether the wizard may offer to skip the second factor. Decided

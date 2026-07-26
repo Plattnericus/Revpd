@@ -21,6 +21,7 @@ import (
 	"github.com/plattnericus/revpd/internal/config"
 	"github.com/plattnericus/revpd/internal/crypto"
 	"github.com/plattnericus/revpd/internal/mfa"
+	"github.com/plattnericus/revpd/internal/netcheck"
 	"github.com/plattnericus/revpd/internal/policy"
 	"github.com/plattnericus/revpd/internal/store"
 	"github.com/pquerna/otp/totp"
@@ -30,13 +31,21 @@ type apiEnv struct {
 	srv    *httptest.Server
 	db     *store.DB
 	secret string
+
+	// public is the address service the portal was built with, so a test can
+	// see what it was told without going through HTTP.
+	public *netcheck.Service
 }
 
 const apiPassword = "CorrectHorseBatteryStaple"
 
 // newAPI brings up the portal with one enrolled admin and one plain user who
 // has no second factor at all.
-func newAPI(t *testing.T) *apiEnv {
+func newAPI(t *testing.T) *apiEnv { return newAPIWith(t, nil) }
+
+// newAPIWith is newAPI with a chance to change the configuration first, for
+// tests about what the gateway is set to rather than who may reach it.
+func newAPIWith(t *testing.T, tune func(*config.Config)) *apiEnv {
 	t.Helper()
 	ctx := context.Background()
 
@@ -53,6 +62,15 @@ func newAPI(t *testing.T) *apiEnv {
 
 	cfg := config.Defaults()
 	cfg.Web.Hostname = "gw.test"
+
+	// Detection off unless a test asks for it: the suite must not depend on
+	// somebody else's server being up, or reach out to one at all.
+	cfg.Public.Detect = false
+	cfg.Public.Resolvers = nil
+
+	if tune != nil {
+		tune(&cfg)
+	}
 
 	key, _ := crypto.NewMasterKey()
 	sealer, _ := crypto.NewSealer(key)
@@ -83,10 +101,19 @@ func newAPI(t *testing.T) *apiEnv {
 	})
 	engine := policy.New(db, log, cfg, nil).WithSecrets(sealer, am)
 
-	srv := httptest.NewServer(api.New(db, log, cfg, am, engine, sealer, nil).Handler())
+	public := netcheck.NewService(netcheck.ServiceOptions{
+		Host:   cfg.PublicHost(),
+		Detect: cfg.Public.Detect,
+		Detector: netcheck.New(netcheck.Options{
+			Resolvers: cfg.Public.Resolvers,
+		}),
+	})
+
+	srv := httptest.NewServer(
+		api.New(db, log, cfg, am, engine, sealer, nil).WithPublic(public).Handler())
 	t.Cleanup(srv.Close)
 
-	return &apiEnv{srv: srv, db: db, secret: secret}
+	return &apiEnv{srv: srv, db: db, secret: secret, public: public}
 }
 
 // call issues a request carrying whatever cookies and CSRF token it is given.

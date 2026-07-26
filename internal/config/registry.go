@@ -37,12 +37,14 @@ const (
 	KindText     Kind = "text"
 	KindAddr     Kind = "addr"      // host:port
 	KindAddrList Kind = "addr_list" // comma-separated host:port
+	KindTextList Kind = "text_list" // comma-separated free text
 )
 
 // Group is how the settings page is divided. Ordered as they should appear.
 type Group string
 
 const (
+	GroupPublic  Group = "public"
 	GroupNetwork Group = "network"
 	GroupAccess  Group = "access"
 	GroupSignIn  Group = "signin"
@@ -54,7 +56,7 @@ const (
 
 // Groups in display order.
 var Groups = []Group{
-	GroupNetwork, GroupAccess, GroupSignIn, GroupRelay, GroupDesktop, GroupWake, GroupUpdates,
+	GroupPublic, GroupNetwork, GroupAccess, GroupSignIn, GroupRelay, GroupDesktop, GroupWake, GroupUpdates,
 }
 
 // Setting is one editable value.
@@ -94,6 +96,26 @@ type Setting struct {
 // to whoever is signed in to the portal.
 func Registry() []Setting {
 	return []Setting{
+		/* -------------------------------------------------------- public --- */
+
+		// None of these move a listener or touch a certificate: they describe
+		// what is already true on the far side of the router. So they take
+		// effect the moment they are saved rather than asking for a restart
+		// that would drop every open desktop session to change a printed
+		// address.
+		host("public.host", GroupPublic, false, func(c *Config) *string { return &c.Public.Host },
+			"The domain or address you reach this gateway on from outside. Leave it empty to use the detected address."),
+		boolean("public.detect", GroupPublic, false, func(c *Config) *bool { return &c.Public.Detect },
+			"Ask the internet what address it sees. Turn it off and nothing is ever told about this gateway; only the host above is used."),
+		port("public.rdp_port", GroupPublic, false, func(c *Config) *int { return &c.Public.RDPPort },
+			"The port your router forwards to Remote Desktop. Leave it at 0 when the router passes the same number straight through."),
+		port("public.portal_port", GroupPublic, false, func(c *Config) *int { return &c.Public.PortalPort },
+			"The same for the web interface."),
+		textList("public.resolvers", GroupPublic, true, func(c *Config) *[]string { return &c.Public.Resolvers },
+			"Where to ask. HTTPS only, and two have to agree before an answer is used."),
+		duration("public.refresh", GroupPublic, true, 300, 7*24*3600, func(c *Config) *time.Duration { return &c.Public.Refresh },
+			"How often to look again. Home connections change address without warning."),
+
 		/* ------------------------------------------------------- network --- */
 
 		addr("web.listen", GroupNetwork, true, func(c *Config) *string { return &c.Web.Listen },
@@ -302,6 +324,65 @@ func text(key string, g Group, restart bool, ptr func(*Config) *string, warn str
 		get: func(c *Config) string { return *ptr(c) },
 		set: func(c *Config, v string) error {
 			*ptr(c) = strings.TrimSpace(v)
+			return nil
+		},
+	}
+}
+
+// host accepts a bare hostname or address, and refuses the two things people
+// reach for instead — a scheme in front and a port on the end.
+func host(key string, g Group, restart bool, ptr func(*Config) *string, warn string) Setting {
+	return Setting{
+		Key: key, Group: g, Kind: KindText, Restart: restart, Warn: warn,
+		get: func(c *Config) string { return *ptr(c) },
+		set: func(c *Config, v string) error {
+			v = strings.TrimSpace(v)
+			if err := CheckPublicHost(v); err != nil {
+				return err
+			}
+			*ptr(c) = v
+			return nil
+		},
+	}
+}
+
+// port is a port number, with zero meaning "whatever the listener uses".
+func port(key string, g Group, restart bool, ptr func(*Config) *int, warn string) Setting {
+	return Setting{
+		Key: key, Group: g, Kind: KindInt, Restart: restart, Min: 0, Max: 65535, Warn: warn,
+		get: func(c *Config) string { return strconv.Itoa(*ptr(c)) },
+		set: func(c *Config, v string) error {
+			v = strings.TrimSpace(v)
+			if v == "" {
+				v = "0" // an emptied field reads as "same as the listener"
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return fmt.Errorf("%q is not a port number", v)
+			}
+			if n < 0 || n > 65535 {
+				return fmt.Errorf("%d is not a port number", n)
+			}
+			*ptr(c) = n
+			return nil
+		},
+	}
+}
+
+// textList is a comma-separated list of things that are not addresses. What
+// counts as valid is Validate's business, which knows what the list is for.
+func textList(key string, g Group, restart bool, ptr func(*Config) *[]string, warn string) Setting {
+	return Setting{
+		Key: key, Group: g, Kind: KindTextList, Restart: restart, Warn: warn,
+		get: func(c *Config) string { return strings.Join(*ptr(c), ", ") },
+		set: func(c *Config, v string) error {
+			var list []string
+			for _, part := range strings.Split(v, ",") {
+				if part = strings.TrimSpace(part); part != "" {
+					list = append(list, part)
+				}
+			}
+			*ptr(c) = list
 			return nil
 		},
 	}
