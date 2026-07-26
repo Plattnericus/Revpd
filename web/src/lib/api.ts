@@ -180,6 +180,26 @@ export const api = {
 
   settings: () => get<ApiSettings>('/api/admin/settings'),
 
+  /* -------------------------------------------------- configuration --- */
+
+  config: () => get<ApiConfig>('/api/admin/config'),
+
+  /** Saves a set of changes, or hands keys back to the file. */
+  saveConfig: (values: Record<string, string>, reset: string[] = []) =>
+    post<ApiConfig>('/api/admin/config', { values, reset }),
+
+  restart: () => post<{ ok: boolean; sessions_dropped: number }>('/api/admin/restart'),
+
+  /* ------------------------------------------------------ discovery --- */
+
+  discoverRanges: () => get<{ ranges: ApiRange[]; limit: number }>('/api/admin/discover/ranges'),
+
+  discoverScan: (cidr: string) =>
+    post<{ hosts: ApiHost[]; known: string[] }>('/api/admin/discover/scan', { cidr }),
+
+  discoverHost: (ip: string) =>
+    post<{ hosts: ApiHost[]; known: string[] }>('/api/admin/discover/host', { ip }),
+
   /* --------------------------------------------------------- updates --- */
 
   updateStatus: () => get<ApiUpdate>('/api/update'),
@@ -282,6 +302,65 @@ export interface ApiUpdate {
     message: string
     rolled_back: boolean
     at: string
+  }
+}
+
+export interface ApiRange {
+  interface: string
+  cidr: string
+  address: string
+  hosts: number
+  too_large: boolean
+}
+
+export interface ApiHost {
+  ip: string
+  mac?: string
+  hostname?: string
+  open_ports: number[]
+  os: 'windows' | 'linux' | 'macos' | 'unknown'
+  distro?: string
+  confidence: 'high' | 'medium' | 'low'
+  why: string[]
+  /** Speaks Remote Desktop, or has the port open. */
+  suggested: boolean
+  /** A hardware address was found, so Wake-on-LAN can reach it. */
+  wakeable: boolean
+}
+
+export type SettingKind = 'bool' | 'int' | 'duration' | 'text' | 'addr' | 'addr_list'
+
+export interface ApiSetting {
+  key: string
+  group: string
+  kind: SettingKind
+  /** What will be in force: the file with every saved override applied. */
+  value: string
+  /** What the running process actually loaded. Lags value until a restart. */
+  running: string
+  /** What revpd.yaml and the environment say on their own. */
+  file: string
+  /** Saved, but the running process is still using the old value. */
+  pending: boolean
+  min?: number
+  max?: number
+  /** True when the value is only read while starting up. */
+  restart: boolean
+  warn?: string
+  overridden: boolean
+  changed_by?: string
+  changed_at?: string
+}
+
+export interface ApiConfig {
+  groups: string[]
+  settings: ApiSetting[]
+  runtime: {
+    portal: string
+    portal_url: string
+    gateway: string
+    restart_needed: boolean
+    can_restart: boolean
   }
 }
 

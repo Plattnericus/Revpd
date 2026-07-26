@@ -33,8 +33,8 @@ func cmdUpdate(args []string) error {
 		return updateCheck()
 	case "install", "apply":
 		return updateInstall(args[1:])
-	case "apply-staged":
-		return updateApplyStaged()
+	case "apply-requests", "apply-staged":
+		return applyRequests()
 	case "rollback":
 		return updateRollback()
 	default:
@@ -158,18 +158,42 @@ func updateInstall(args []string) error {
 
 /* --------------------------------------------------------- apply-staged --- */
 
-// updateApplyStaged is what systemd runs. It is deliberately not in the help
-// text: it is a mechanism, not a command anyone needs to type.
-func updateApplyStaged() error {
+// applyRequests is what systemd runs when a request appears. It is deliberately
+// not in the help text: it is a mechanism, not a command anyone needs to type.
+//
+// Two kinds of request arrive here, both needing root for the same reason —
+// the service itself may neither write to /usr nor talk to systemd.
+func applyRequests() error {
 	if os.Geteuid() != 0 {
-		return errors.New("`revpd update apply-staged` replaces the installed binary and must run as root")
+		return errors.New("`revpd update apply-requests` changes the installation and must run as root")
 	}
 
 	cfg, err := config.Load(defaultConfigPath())
 	if err != nil {
 		return err
 	}
-	return applyStaged(filepath.Join(cfg.DataDir, "update"), false)
+	dir := filepath.Join(cfg.DataDir, "update")
+
+	// A plain restart, asked for after a settings change.
+	if by, ok := update.RestartRequested(dir); ok {
+		fmt.Printf("restarting %s, asked for by %s\n", installUnit, orUnknownActor(by))
+		if err := update.RestartService(context.Background(), update.ApplyOptions{
+			Dir: dir, Unit: installUnit,
+			Logf: func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
+		}); err != nil {
+			return err
+		}
+		fmt.Println("the service came back healthy")
+	}
+
+	return applyStaged(dir, false)
+}
+
+func orUnknownActor(by string) string {
+	if by == "" {
+		return "the web interface"
+	}
+	return by
 }
 
 func applyStaged(dir string, verbose bool) error {

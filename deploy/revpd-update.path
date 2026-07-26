@@ -1,5 +1,5 @@
 [Unit]
-Description=Watch for a Revpd update waiting to be installed
+Description=Watch for Revpd requests that need root
 Documentation=https://github.com/plattnericus/revpd
 
 # The gateway runs unprivileged and with /usr mounted read-only, so it cannot
@@ -8,7 +8,9 @@ Documentation=https://github.com/plattnericus/revpd
 # and starts the part that needs root.
 
 [Path]
-PathExists=/var/lib/revpd/update/apply.request
+# Any request, not one specific file: an update to install and a restart after
+# a settings change both arrive here and both need the same privileges.
+PathExistsGlob=/var/lib/revpd/update/*.request
 Unit=revpd-update.service
 
 [Install]

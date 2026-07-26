@@ -958,12 +958,12 @@ EOF
 # picks the request up as root.
 cat > "$UPDATE_SERVICE" <<'EOF'
 [Unit]
-Description=Install the staged Revpd update
+Description=Apply a privileged Revpd request
 Documentation=https://github.com/plattnericus/revpd
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/revpd update apply-staged
+ExecStart=/usr/local/bin/revpd update apply-requests
 
 User=root
 ReadWritePaths=/usr/local/bin /var/lib/revpd
@@ -984,11 +984,13 @@ EOF
 
 cat > "$UPDATE_PATH" <<'EOF'
 [Unit]
-Description=Watch for a Revpd update waiting to be installed
+Description=Watch for Revpd requests that need root
 Documentation=https://github.com/plattnericus/revpd
 
 [Path]
-PathExists=/var/lib/revpd/update/apply.request
+# Any request, not one specific file: an update to install and a restart after
+# a settings change both arrive here and both need the same privileges.
+PathExistsGlob=/var/lib/revpd/update/*.request
 Unit=revpd-update.service
 
 [Install]

@@ -1,79 +1,479 @@
-import { useEffect, useState } from 'react'
-import { Card, Field, SectionTitle, Badge } from '../components/ui'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { AlertTriangle, Info, RotateCcw, TriangleAlert } from 'lucide-react'
+import { Button, Card, Field, spring } from '../components/ui'
 import { UpdatePanel, useUpdateStatus } from '../components/UpdateCard'
-import { api, toSettings } from '../lib/api'
-import { useT } from '../lib/lang'
-import type { Settings as S } from '../lib/types'
+import { api, type ApiConfig, type ApiSetting } from '../lib/api'
+import { useLang, useT } from '../lib/lang'
+import { settingLabel } from '../lib/i18n.settings'
+import type { Key } from '../lib/i18n'
 
 /*
-  Read-only on purpose. These come from revpd.yaml and the environment, so the
-  file stays the single source of truth — a value edited here and then
-  overwritten on the next restart would be worse than not offering the edit.
+  Everything the gateway can be configured with.
+
+  Two values matter for each setting and both are shown: what revpd.yaml says,
+  and what is actually in force. They differ once somebody changes one here,
+  and "back to the file" then stays one click away — nobody has to remember
+  whether a value came from the installer or from a change last month.
+
+  Nothing is saved field by field. Settings constrain each other, so the whole
+  form goes to the server at once and comes back either applied or refused with
+  the reason. A refusal changes nothing at all.
 */
+
 export function Settings() {
   const t = useT()
   const updates = useUpdateStatus()
-  const [s, setS] = useState<S | null>(null)
-  const [error, setError] = useState('')
 
-  useEffect(() => {
-    api
-      .settings()
-      .then((raw) => setS(toSettings(raw)))
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+  const [cfg, setCfg] = useState<ApiConfig | null>(null)
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      setCfg(await api.config())
+      setError('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }, [])
 
-  if (error) {
-    return (
-      <div className="rounded-[10px] px-3 py-2 text-[13px]" style={{ background: 'var(--red-soft)', color: 'var(--red)' }}>
-        {error}
-      </div>
-    )
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const dirty = Object.keys(edits).length > 0
+
+  const save = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      setCfg(await api.saveConfig(edits))
+      setEdits({})
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      // The server validates the whole set and explains itself; showing that
+      // verbatim beats paraphrasing it into something vaguer.
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
   }
-  if (!s) return <div className="h-24" />
+
+  const reset = async (key: string) => {
+    setBusy(true)
+    setError('')
+    try {
+      setCfg(await api.saveConfig({}, [key]))
+      setEdits((e) => {
+        const next = { ...e }
+        delete next[key]
+        return next
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const restart = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await api.restart()
+      // The server is going away; wait for it to come back rather than
+      // showing a failed request the moment it does.
+      setTimeout(load, 6000)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setBusy(false)
+    }
+  }
+
+  const byGroup = useMemo(() => {
+    const out = new Map<string, ApiSetting[]>()
+    for (const s of cfg?.settings ?? []) {
+      const list = out.get(s.group) ?? []
+      list.push(s)
+      out.set(s.group, list)
+    }
+    return out
+  }, [cfg])
+
+  if (!cfg) {
+    return error ? <Problem>{error}</Problem> : <div className="h-24" />
+  }
+
+  const restartNeeded = cfg.runtime.restart_needed
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* The one panel here that is not read-only: the automatic-update
-          switch is an operator preference rather than a deployment decision,
-          so it is stored alongside the accounts instead of in the file. */}
+    <div className="flex flex-col gap-4 pb-24">
       <UpdatePanel ctl={updates} />
 
       <Card>
-        <SectionTitle>{t('settings.gateway')}</SectionTitle>
-        <Field label={t('settings.hostname')} value={s.hostname} mono readOnly />
-      </Card>
-
-      <Card>
-        <div className="mb-1 flex items-center gap-2">
-          <h2 className="text-[15px] font-semibold tracking-[-0.015em]">{t('settings.rdpLogin')}</h2>
-          <Badge tone={s.jitEnabled ? 'green' : 'grey'}>{s.jitEnabled ? 'on' : 'off'}</Badge>
-        </div>
-        <p className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
-          {t('settings.rdpLoginHint')}
-        </p>
-      </Card>
-
-      <Card>
-        <SectionTitle>{t('settings.grants')}</SectionTitle>
-        <div className="flex gap-3">
-          <Field label={`${t('settings.ttl')} (${t('settings.seconds')})`} value={s.grantTtlS} mono readOnly />
-          <Field label={`${t('settings.reuse')} (${t('settings.seconds')})`} value={s.reuseWindowS} mono readOnly />
+        <h2 className="mb-1 text-[15px] font-semibold tracking-[-0.015em]">{t('settings.runningOn')}</h2>
+        <div className="mt-2 flex flex-col gap-1.5">
+          <Line label={t('settings.portal')} value={cfg.runtime.portal_url} />
+          <Line label={t('settings.remoteDesktop')} value={cfg.runtime.gateway} />
         </div>
       </Card>
 
-      <Card>
-        <SectionTitle>{t('settings.security')}</SectionTitle>
-        <div className="flex gap-3">
-          <Field label={t('settings.maxFailures')} value={s.maxFailures} mono readOnly />
-          <Field label={`Tarpit (${t('settings.seconds')})`} value={s.tarpitS} mono readOnly />
-          <Field label="Conns/IP" value={s.maxConnsPerIp} mono readOnly />
-        </div>
-      </Card>
+      {restartNeeded && (
+        <Banner
+          tone="orange"
+          icon={<AlertTriangle size={15} strokeWidth={2} />}
+          title={t('settings.restartNeeded')}
+          body={t('settings.restartNeededHint')}
+          action={
+            cfg.runtime.can_restart ? (
+              <Button variant="primary" onClick={restart} disabled={busy}>
+                {t('settings.restartNow')}
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
+
+      {error && <Problem>{error}</Problem>}
+
+      {cfg.groups.map((group) => {
+        const items = byGroup.get(group) ?? []
+        if (items.length === 0) return null
+
+        return (
+          <Card key={group} padded={false}>
+            <div className="border-b px-5 py-3.5">
+              <h2 className="text-[15px] font-semibold tracking-[-0.015em]">
+                {t(`settings.group.${group}` as Key)}
+              </h2>
+              <p className="mt-0.5 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
+                {t(`settings.group.${group}.hint` as Key)}
+              </p>
+            </div>
+
+            <div className="flex flex-col divide-y">
+              {items.map((s) => (
+                <Row
+                  key={s.key}
+                  setting={s}
+                  edited={edits[s.key]}
+                  disabled={busy}
+                  onChange={(v) =>
+                    setEdits((e) => {
+                      const next = { ...e }
+                      // Typing a value back to what it already is is not a change.
+                      if (v === s.value) delete next[s.key]
+                      else next[s.key] = v
+                      return next
+                    })
+                  }
+                  onReset={() => reset(s.key)}
+                />
+              ))}
+            </div>
+          </Card>
+        )
+      })}
 
       <p className="px-1 text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
-        <code className="font-mono">/etc/revpd/revpd.yaml</code>
+        {t('settings.fileNote')} <code className="font-mono">/etc/revpd/revpd.yaml</code>
       </p>
+
+      {/* The save bar follows the page: a long form should never hide it. */}
+      <AnimatePresence>
+        {(dirty || saved) && (
+          <motion.div
+            initial={{ y: 60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 60, opacity: 0 }}
+            transition={spring}
+            className="fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-4"
+            style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+          >
+            <div
+              className="flex w-full max-w-[560px] items-center gap-3 rounded-[14px] border px-4 py-3"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-sheet)' }}
+            >
+              <span className="flex-1 text-[13px]">
+                {saved && !dirty
+                  ? t('settings.saved')
+                  : `${Object.keys(edits).length} ${t('settings.pending')}`}
+              </span>
+              {dirty && (
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setEdits({})} disabled={busy}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button size="sm" variant="primary" onClick={save} disabled={busy}>
+                    {t('common.save')}
+                  </Button>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+/* ----------------------------------------------------------------- row --- */
+
+function Row({
+  setting,
+  edited,
+  disabled,
+  onChange,
+  onReset,
+}: {
+  setting: ApiSetting
+  edited?: string
+  disabled: boolean
+  onChange: (v: string) => void
+  onReset: () => void
+}) {
+  const t = useT()
+  const { lang } = useLang()
+  const current = edited ?? setting.value
+  const changed = edited !== undefined
+
+  return (
+    <div className="px-5 py-3.5">
+      <div className="flex items-start gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-[14px] font-medium">{settingLabel(lang, setting.key)}</label>
+            {setting.restart && (
+              <span
+                className="rounded-full px-1.5 py-[1px] text-[11px] font-medium"
+                style={{ background: 'var(--fill)', color: 'var(--text-secondary)' }}
+              >
+                {t('settings.needsRestart')}
+              </span>
+            )}
+            {setting.pending && (
+              <span
+                className="rounded-full px-1.5 py-[1px] text-[11px] font-medium"
+                style={{ background: 'var(--orange-soft)', color: 'var(--orange)' }}
+                title={`${t('settings.stillRunning')} ${setting.running}`}
+              >
+                {t('settings.pendingRestart')}
+              </span>
+            )}
+            {setting.overridden && !changed && !setting.pending && (
+              <button
+                onClick={onReset}
+                disabled={disabled}
+                title={t('settings.backToFile')}
+                className="inline-flex items-center gap-1 rounded-full px-1.5 py-[1px] text-[11px] font-medium hover:opacity-70"
+                style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
+              >
+                <RotateCcw size={10} strokeWidth={2} />
+                {t('settings.changed')}
+              </button>
+            )}
+          </div>
+
+          <p className="mt-0.5 font-mono text-[11.5px]" style={{ color: 'var(--text-tertiary)' }}>
+            {setting.key}
+          </p>
+
+          {setting.warn && (
+            <p className="mt-1 flex items-start gap-1.5 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
+              <Info size={12} strokeWidth={2} className="mt-[3px] shrink-0" />
+              {setting.warn}
+            </p>
+          )}
+
+          {setting.overridden && setting.file !== current && (
+            <p className="mt-1 text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+              {t('settings.fileSays')} <code className="font-mono">{setting.file || '—'}</code>
+            </p>
+          )}
+        </div>
+
+        <div className="w-[190px] shrink-0">
+          <Control setting={setting} value={current} disabled={disabled} onChange={onChange} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Control({
+  setting,
+  value,
+  disabled,
+  onChange,
+}: {
+  setting: ApiSetting
+  value: string
+  disabled: boolean
+  onChange: (v: string) => void
+}) {
+  const t = useT()
+
+  if (setting.kind === 'bool') {
+    const on = value === 'true'
+    return (
+      <div className="flex justify-end">
+        <button
+          role="switch"
+          aria-checked={on}
+          aria-label={setting.key}
+          disabled={disabled}
+          onClick={() => onChange(on ? 'false' : 'true')}
+          className="relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-40"
+          style={{ background: on ? 'var(--green)' : 'var(--fill-hover)' }}
+        >
+          <motion.span
+            layout
+            transition={spring}
+            className="absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white"
+            style={{ left: on ? 22 : 2, boxShadow: '0 2px 5px rgba(0,0,0,.25)' }}
+          />
+        </button>
+      </div>
+    )
+  }
+
+  if (setting.kind === 'duration') {
+    return <DurationField value={value} disabled={disabled} onChange={onChange} />
+  }
+
+  if (setting.kind === 'int') {
+    return (
+      <Field
+        type="number"
+        min={setting.min}
+        max={setting.max}
+        value={value}
+        disabled={disabled}
+        mono
+        onChange={(e) => onChange(e.target.value)}
+      />
+    )
+  }
+
+  return (
+    <Field
+      value={value}
+      disabled={disabled}
+      mono
+      placeholder={setting.kind === 'addr' ? ':443' : undefined}
+      hint={setting.kind === 'addr_list' ? t('settings.commaSeparated') : undefined}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
+/*
+  Durations travel as seconds. Showing them that way would make "12 hours"
+  read as 43200, so the field picks the largest unit the value divides into
+  evenly and converts back on the way out.
+*/
+function DurationField({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string
+  disabled: boolean
+  onChange: (v: string) => void
+}) {
+  const t = useT()
+  const seconds = Number(value) || 0
+
+  const unit = seconds > 0 && seconds % 3600 === 0 ? 3600 : seconds > 0 && seconds % 60 === 0 ? 60 : 1
+  const shown = seconds / unit
+
+  const units: { factor: number; label: string }[] = [
+    { factor: 1, label: t('settings.seconds') },
+    { factor: 60, label: t('settings.minutes') },
+    { factor: 3600, label: t('settings.hours') },
+  ]
+
+  return (
+    <div className="flex gap-1.5">
+      <Field
+        type="number"
+        min={0}
+        value={String(shown)}
+        disabled={disabled}
+        mono
+        className="flex-1"
+        onChange={(e) => onChange(String(Math.max(0, Number(e.target.value) || 0) * unit))}
+      />
+      <select
+        value={unit}
+        disabled={disabled}
+        aria-label={t('settings.unit')}
+        onChange={(e) => onChange(String(shown * Number(e.target.value)))}
+        className="h-9 rounded-[10px] border px-2 text-[13px] outline-none"
+        style={{ background: 'var(--surface-sunken)', color: 'var(--text)' }}
+      >
+        {units.map((u) => (
+          <option key={u.factor} value={u.factor}>
+            {u.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------- pieces --- */
+
+function Line({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <span className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+        {label}
+      </span>
+      <code className="font-mono text-[13px] font-medium">{value}</code>
+    </div>
+  )
+}
+
+function Problem({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="flex items-start gap-2 rounded-[10px] px-3 py-2.5 text-[13px] leading-relaxed"
+      style={{ background: 'var(--red-soft)', color: 'var(--red)' }}
+    >
+      <TriangleAlert size={14} strokeWidth={2} className="mt-[3px] shrink-0" />
+      <span className="whitespace-pre-wrap">{children}</span>
+    </div>
+  )
+}
+
+function Banner({
+  tone,
+  icon,
+  title,
+  body,
+  action,
+}: {
+  tone: 'orange'
+  icon: React.ReactNode
+  title: string
+  body: string
+  action?: React.ReactNode
+}) {
+  const colors = { orange: { background: 'var(--orange-soft)', color: 'var(--orange)' } }[tone]
+
+  return (
+    <div className="flex items-center gap-3 rounded-[12px] px-4 py-3" style={colors}>
+      <span className="shrink-0">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13.5px] font-medium">{title}</p>
+        <p className="mt-0.5 text-[12.5px] opacity-80">{body}</p>
+      </div>
+      {action}
     </div>
   )
 }

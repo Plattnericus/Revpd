@@ -161,6 +161,41 @@ func (o ApplyOptions) withDefaults() ApplyOptions {
 	return o
 }
 
+// RestartRequested reports whether a plain restart is waiting, and clears the
+// request. Settings that are only read at startup are applied this way.
+func RestartRequested(dir string) (by string, ok bool) {
+	path := filepath.Join(dir, "restart.request")
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	os.Remove(path)
+
+	var req struct {
+		RequestedBy string `json:"requested_by"`
+	}
+	json.Unmarshal(body, &req)
+	return req.RequestedBy, true
+}
+
+// RestartService restarts the unit and waits for it to prove it stays up.
+//
+// Unlike an update there is nothing to roll back to: the binary has not
+// changed, and a service that will not start again is a configuration problem
+// somebody has to look at. Saying so precisely is all this can do.
+func RestartService(ctx context.Context, o ApplyOptions) error {
+	o = o.withDefaults()
+
+	if err := o.restart(ctx); err != nil {
+		return fmt.Errorf("the service would not restart: %w", err)
+	}
+	if err := o.waitHealthy(ctx); err != nil {
+		return fmt.Errorf("the service restarted but did not stay up: %w", err)
+	}
+	return nil
+}
+
 // Restore puts a specific kept binary back and restarts the service. It is the
 // manual escape hatch for an update that installed cleanly but turned out to
 // misbehave later, which no automatic health check can catch.

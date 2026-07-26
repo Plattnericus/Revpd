@@ -208,6 +208,31 @@ func cmdServe(args []string) error {
 		slog.Warn("could not tidy stale sessions", "err", err)
 	}
 
+	// Settings changed in the web interface are stored in the database and
+	// layered over the file here, once, before anything reads the result.
+	//
+	// The file is never rewritten: the service runs with /etc read-only, and
+	// silently editing a file somebody else administers would be worse than
+	// keeping the two apart and showing both.
+	fileCfg := cfg
+	if overrides, err := db.AllSettings(ctx); err != nil {
+		slog.Warn("could not read stored settings, using the file alone", "err", err)
+	} else if len(overrides) > 0 {
+		merged, unknown, err := config.Apply(cfg, overrides)
+		for _, k := range unknown {
+			slog.Warn("a stored setting no longer exists and is being ignored", "key", k)
+		}
+		if err != nil {
+			// The file on its own is known-good, so the gateway still starts.
+			// Refusing to boot over a bad stored value would leave no way in
+			// to correct it.
+			slog.Error("stored settings are not valid and have been ignored", "err", err)
+		} else {
+			cfg = merged
+			slog.Info("applied settings from the web interface", "count", len(overrides))
+		}
+	}
+
 	authMgr := auth.NewManager(db, auth.Options{
 		TTL:         cfg.Auth.SessionTTL,
 		Idle:        cfg.Auth.SessionIdle,
@@ -305,7 +330,8 @@ func cmdServe(args []string) error {
 	// Web portal.
 	apiSrv := api.New(db, log, cfg, authMgr, engine, sealer, web.Handler()).
 		WithUpdates(updater, version).
-		WithPortal(portal.Addr)
+		WithPortal(portal.Addr).
+		WithFileConfig(fileCfg)
 	httpSrv := &http.Server{
 		Handler:           apiSrv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,

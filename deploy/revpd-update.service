@@ -1,13 +1,15 @@
 [Unit]
-Description=Install the staged Revpd update
+Description=Apply a privileged Revpd request
 Documentation=https://github.com/plattnericus/revpd
 
-# Networking is not needed: the archive was downloaded and verified before this
-# ever runs. All that is left is replacing the binary and restarting.
+# Networking is not needed: an update was downloaded and verified before this
+# ever runs, and a restart needs nothing at all. What is left in both cases is
+# the part the service account may not do — writing to /usr and driving
+# systemd.
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/revpd update apply-staged
+ExecStart=/usr/local/bin/revpd update apply-requests
 
 # It replaces /usr/local/bin/revpd and restarts revpd.service, so it runs as
 # root. It is still worth confining to the two directories it touches.

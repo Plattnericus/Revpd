@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Monitor, Plus, Radio } from 'lucide-react'
+import { Monitor, Plus, Radar, Radio } from 'lucide-react'
 import { Badge, Button, Card, EmptyState, Field, Sheet } from '../components/ui'
+import { DiscoverSheet } from '../components/Discover'
 import { api, toTarget } from '../lib/api'
 import { useT } from '../lib/lang'
 import type { Target } from '../lib/types'
@@ -10,6 +11,7 @@ export function Targets() {
 
   const [targets, setTargets] = useState<Target[]>([])
   const [adding, setAdding] = useState(false)
+  const [finding, setFinding] = useState(false)
   const [tested, setTested] = useState<number | null>(null)
   const [error, setError] = useState('')
 
@@ -65,9 +67,21 @@ export function Targets() {
         <p className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
           {targets.length} {t('targets.count')}
         </p>
-        <Button variant="primary" size="sm" icon={<Plus size={14} strokeWidth={2} />} onClick={() => setAdding(true)}>
-          {t('targets.add')}
-        </Button>
+        <div className="flex gap-2">
+          {/* Offered first: it fills in the hardware address, which is the
+              field most likely to be wrong when typed by hand. */}
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Radar size={14} strokeWidth={2} />}
+            onClick={() => setFinding(true)}
+          >
+            {t('discover.button')}
+          </Button>
+          <Button size="sm" icon={<Plus size={14} strokeWidth={2} />} onClick={() => setAdding(true)}>
+            {t('targets.add')}
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -114,6 +128,8 @@ export function Targets() {
           ))}
         </Card>
       )}
+
+      <DiscoverSheet open={finding} onClose={() => setFinding(false)} onAdded={load} />
 
       <Sheet
         open={adding}

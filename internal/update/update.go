@@ -497,6 +497,26 @@ func (m *Manager) RequestApply(by string) error {
 	return nil
 }
 
+// RequestRestart asks the privileged helper to restart the service.
+//
+// Nothing about this is an update, but it needs exactly the same thing an
+// update does — root, and a way to reach systemd — so it travels through the
+// same request directory rather than growing a second mechanism beside it.
+func (m *Manager) RequestRestart(by string) error {
+	body, err := json.MarshalIndent(map[string]any{
+		"requested_by": by,
+		"requested_at": time.Now().Format(time.RFC3339),
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := writeFileAtomic(filepath.Join(m.dir, "restart.request"), body, 0o640); err != nil {
+		return fmt.Errorf("could not ask for a restart: %w", err)
+	}
+	return nil
+}
+
 // ApplierInstalled reports whether the privileged half is present. Without it
 // an update can be downloaded and verified but never installed, and the
 // dashboard should say so before someone waits for a restart that never comes.

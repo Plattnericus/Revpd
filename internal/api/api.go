@@ -42,6 +42,11 @@ type Server struct {
 	// web.listen: the fallback moves it when the usual port is taken.
 	portalAddr string
 
+	// fileCfg is the configuration as it came from revpd.yaml and the
+	// environment, before anything stored in the database was layered on. The
+	// settings page shows both so an override is visible as an override.
+	fileCfg config.Config
+
 	assets http.Handler
 }
 
@@ -50,6 +55,11 @@ func New(db *store.DB, log *audit.Log, cfg config.Config, am *auth.Manager, engi
 		db: db, log: log, cfg: cfg, auth: am, engine: engine, sealer: sealer,
 		challenges: newChallengeStore(),
 		assets:     assets,
+
+		// Overwritten by WithFileConfig where the two differ. Defaulting to
+		// the running configuration means an unconfigured server reports no
+		// spurious overrides.
+		fileCfg: cfg,
 	}
 }
 
@@ -97,6 +107,18 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/admin/targets", s.admin(s.handleCreateTarget))
 	mux.Handle("POST /api/admin/targets/{id}/testwol", s.admin(s.handleTestWoL))
 	mux.Handle("GET /api/admin/settings", s.admin(s.handleSettings))
+
+	// Everything that can be changed here, what it is set to, and what the
+	// file says. Saving validates the whole set before storing any of it.
+	mux.Handle("GET /api/admin/config", s.admin(s.handleSettingsSchema))
+	mux.Handle("POST /api/admin/config", s.admin(s.handleSettingsSave))
+	mux.Handle("POST /api/admin/restart", s.admin(s.handleRestart))
+
+	// Finding machines to add. Scanning reaches out to the local network, so
+	// it is an administrator's decision and nobody else's.
+	mux.Handle("GET /api/admin/discover/ranges", s.admin(s.handleDiscoverRanges))
+	mux.Handle("POST /api/admin/discover/scan", s.admin(s.handleDiscoverScan))
+	mux.Handle("POST /api/admin/discover/host", s.admin(s.handleDiscoverHost))
 
 	// Updates. Reading the status is enough to draw the banner; everything
 	// that downloads or installs is an administrator's decision.
