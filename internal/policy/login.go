@@ -73,15 +73,30 @@ func (e *Engine) Authenticate(ctx context.Context, srcIP net.IP, creds *rdp.Cred
 		return nil, errLoginRefused
 	}
 
-	// No comma means no second factor was supplied. A gateway that let this
-	// through would be a plain port forward.
-	if factor == "" {
-		e.fail(ipKey, name)
-		logDenied("no second factor supplied")
-		return nil, errLoginRefused
-	}
+	// No comma means no second factor was supplied.
+	//
+	// Normally that is the end of it: a gateway that lets a password through on
+	// its own is a plain port forward with extra steps. It is allowed only
+	// where the requirement has been turned off deliberately *and* the account
+	// has nothing enrolled — an account that does have a second factor must
+	// always use it, whatever the setting says, or turning the requirement off
+	// would silently weaken every existing account.
+	withFactor := factor != ""
 
-	if !e.checkSecondFactor(ctx, user, factor, srcIP) {
+	switch {
+	case !withFactor:
+		// Allowed only where the requirement has been turned off *and* this
+		// account has enrolled nothing. An account that does have a second
+		// factor must always use it, whatever the setting says — otherwise
+		// turning the requirement off would silently weaken every account that
+		// already had one.
+		if e.cfg.Auth.RequireSecondFactor || len(user.TOTPSecretEnc) > 0 {
+			e.fail(ipKey, name)
+			logDenied("no second factor supplied")
+			return nil, errLoginRefused
+		}
+
+	case !e.checkSecondFactor(ctx, user, factor, srcIP):
 		e.fail(ipKey, name)
 		e.audit(ctx, audit.Entry{
 			Actor: user.Username, Action: audit.ActionMFAFail, SrcIP: srcIP.String(),
@@ -91,10 +106,20 @@ func (e *Engine) Authenticate(ctx context.Context, srcIP net.IP, creds *rdp.Cred
 	}
 
 	e.succeed(ipKey, name)
-	e.audit(ctx, audit.Entry{
-		Actor: user.Username, Action: audit.ActionMFAOK, SrcIP: srcIP.String(),
-		Detail: map[string]any{"via": "rdp"},
-	})
+
+	// Recorded differently, because an audit trail that cannot tell one factor
+	// from two is not much of a trail.
+	if withFactor {
+		e.audit(ctx, audit.Entry{
+			Actor: user.Username, Action: audit.ActionMFAOK, SrcIP: srcIP.String(),
+			Detail: map[string]any{"via": "rdp"},
+		})
+	} else {
+		e.audit(ctx, audit.Entry{
+			Actor: user.Username, Action: audit.ActionLoginOK, SrcIP: srcIP.String(),
+			Detail: map[string]any{"via": "rdp", "second_factor": false},
+		})
+	}
 
 	target, err := e.targetFor(ctx, user)
 	if err != nil {

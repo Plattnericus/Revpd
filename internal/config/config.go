@@ -137,12 +137,22 @@ type Auth struct {
 	SessionTTL  time.Duration `yaml:"session_ttl"`
 	SessionIdle time.Duration `yaml:"session_idle"`
 
-	MaxFailures  int           `yaml:"max_failures"`
-	LockoutBase  time.Duration `yaml:"lockout_base"`
-	LockoutMax   time.Duration `yaml:"lockout_max"`
-	TOTPSkew     uint          `yaml:"totp_skew"`
-	BackupCodes  int           `yaml:"backup_codes"`
-	MasterKeyEnv string        `yaml:"master_key_env"`
+	MaxFailures int           `yaml:"max_failures"`
+	LockoutBase time.Duration `yaml:"lockout_base"`
+	LockoutMax  time.Duration `yaml:"lockout_max"`
+	TOTPSkew    uint          `yaml:"totp_skew"`
+
+	// RequireSecondFactor decides whether an account with nothing enrolled may
+	// sign in at all.
+	//
+	// On by default, and worth leaving on: a gateway that accepts a password
+	// alone can wake a machine and open a desktop session with one stolen
+	// credential, which is the thing this exists to prevent. Turning it off is
+	// for the case where the password is already protected by something else,
+	// or where getting started matters more than the guarantee.
+	RequireSecondFactor bool   `yaml:"require_second_factor"`
+	BackupCodes         int    `yaml:"backup_codes"`
+	MasterKeyEnv        string `yaml:"master_key_env"`
 }
 
 type RDGW struct {
@@ -227,14 +237,15 @@ func Defaults() Config {
 			Repeat:        3,
 		},
 		Auth: Auth{
-			SessionTTL:   12 * time.Hour,
-			SessionIdle:  30 * time.Minute,
-			MaxFailures:  5,
-			LockoutBase:  30 * time.Second,
-			LockoutMax:   1 * time.Hour,
-			TOTPSkew:     1,
-			BackupCodes:  10,
-			MasterKeyEnv: "REVPD_MASTER_KEY",
+			SessionTTL:          12 * time.Hour,
+			SessionIdle:         30 * time.Minute,
+			MaxFailures:         5,
+			LockoutBase:         30 * time.Second,
+			LockoutMax:          1 * time.Hour,
+			TOTPSkew:            1,
+			BackupCodes:         10,
+			RequireSecondFactor: true,
+			MasterKeyEnv:        "REVPD_MASTER_KEY",
 		},
 		RDGW: RDGW{
 			Enabled:  false,
@@ -309,6 +320,7 @@ func (c *Config) applyEnv() {
 	boolean("REVPD_JIT_ENABLED", &c.JIT.Enabled)
 	dur("REVPD_JIT_HOLD_TIMEOUT", &c.JIT.HoldTimeout)
 	boolean("REVPD_RDGW_ENABLED", &c.RDGW.Enabled)
+	boolean("REVPD_REQUIRE_SECOND_FACTOR", &c.Auth.RequireSecondFactor)
 	boolean("REVPD_UPDATE_ENABLED", &c.Update.Enabled)
 	boolean("REVPD_UPDATE_AUTO_INSTALL", &c.Update.AutoInstall)
 	boolean("REVPD_UPDATE_PRERELEASE", &c.Update.Prerelease)

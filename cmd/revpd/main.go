@@ -36,7 +36,14 @@ import (
 var version = "dev" // set with -ldflags at release time
 
 func main() {
-	if err := run(); err != nil {
+	err := run()
+
+	// The action ran as root in a child process, which has already printed
+	// whatever it had to say. Repeating it here would be noise.
+	if errors.Is(err, errElevated) {
+		return
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "revpd:", err)
 		os.Exit(1)
 	}

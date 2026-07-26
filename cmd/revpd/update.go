@@ -129,8 +129,11 @@ func updateInstall(args []string) error {
 	// answer arrives before the download rather than after it.
 	root := os.Geteuid() == 0
 	if !root && !update.ApplierInstalled() {
-		return fmt.Errorf(
-			"installing %s needs root, and the background updater is not installed either.\nRun it again with sudo:  sudo revpd update install", target)
+		// Without the background updater there is nothing to hand the install
+		// to, so this process has to become root itself.
+		if err := needRoot("installing "+target, "update", "install", target); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("Downloading %s…\n", target)
@@ -229,7 +232,7 @@ func applyStaged(dir string, verbose bool) error {
 /* ------------------------------------------------------------- rollback --- */
 
 func updateRollback() error {
-	if err := requireRoot(); err != nil {
+	if err := needRoot("going back to the previous version", "update", "rollback"); err != nil {
 		return err
 	}
 

@@ -246,19 +246,35 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	s.audit(r, audit.Entry{Actor: u.Username, Action: audit.ActionLoginOK, SrcIP: ip.String()})
 
-	// No second factor enrolled: refuse rather than hand out a session.
-	//
-	// Letting a password-only login through would mean this account could wake
-	// a machine and open a session with one factor, which is the exact thing
-	// the gateway exists to prevent. Enrolment happens through the CLI, where
-	// the operator is already authenticated by having shell access.
+	// Nothing enrolled. What happens next is a deliberate choice made in the
+	// configuration, not something to decide here.
 	if len(u.TOTPSecretEnc) == 0 && !s.hasBackupCodes(r.Context(), u) {
+		if s.cfg.Auth.RequireSecondFactor {
+			s.audit(r, audit.Entry{
+				Actor: u.Username, Action: audit.ActionLoginFail, SrcIP: ip.String(),
+				Detail: map[string]any{"reason": "no second factor enrolled"},
+			})
+			fail(w, http.StatusForbidden,
+				"this account has no second factor set up, and one is required. "+
+					"Set it up under Settings, or ask an administrator to turn the requirement off.")
+			return
+		}
+
+		// Allowed through on the password alone. Recorded as such: an audit
+		// trail that cannot tell one factor from two is not much of a trail.
+		full, err := s.auth.Start(r.Context(), u.ID, auth.StageFull, ip.String(), r.UserAgent())
+		if err != nil {
+			serverError(w, err)
+			return
+		}
 		s.audit(r, audit.Entry{
-			Actor: u.Username, Action: audit.ActionLoginFail, SrcIP: ip.String(),
-			Detail: map[string]any{"reason": "no second factor enrolled"},
+			Actor: u.Username, Action: audit.ActionLoginOK, SrcIP: ip.String(),
+			Detail: map[string]any{"second_factor": false},
 		})
-		fail(w, http.StatusForbidden,
-			"no second factor is set up for this account — run `revpd enroll -u "+u.Username+"` on the server")
+
+		auth.SetSessionCookie(w, full, s.cfg.Auth.SessionTTL, s.secure(r))
+		csrf, _ := auth.NewCSRFToken(w, s.secure(r))
+		send(w, map[string]any{"stage": "full", "csrf": csrf})
 		return
 	}
 

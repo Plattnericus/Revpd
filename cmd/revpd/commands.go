@@ -433,7 +433,7 @@ func cmdConfig(args []string) error {
 }
 
 func configEdit() error {
-	if err := requireRoot(); err != nil {
+	if err := needRoot("editing the configuration", "config", "edit"); err != nil {
 		return err
 	}
 

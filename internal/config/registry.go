@@ -129,6 +129,8 @@ func Registry() []Setting {
 		duration("auth.lockout_max", GroupSignIn, true, 60, 30*24*3600, func(c *Config) *time.Duration { return &c.Auth.LockoutMax }, ""),
 		unsigned("auth.totp_skew", GroupSignIn, true, 0, 10, func(c *Config) *uint { return &c.Auth.TOTPSkew },
 			"Extra 30-second steps accepted either side of now. Higher forgives a wrong clock but widens the replay window."),
+		boolean("auth.require_second_factor", GroupSignIn, true, func(c *Config) *bool { return &c.Auth.RequireSecondFactor },
+			"Strongly recommended. With this off, an account that has enrolled nothing can sign in with its password alone — and a stolen password is then enough to wake a machine and open a desktop session."),
 		integer("auth.backup_codes", GroupSignIn, true, 0, 100, func(c *Config) *int { return &c.Auth.BackupCodes },
 			"How many one-time codes a new enrolment hands out."),
 

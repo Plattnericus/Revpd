@@ -374,6 +374,13 @@ func cmdService(args []string) error {
 		return err
 	}
 
+	// Reading the status needs nothing; changing it needs root.
+	if action != "status" {
+		if err := needRoot(action+"ing the service", "service", action); err != nil {
+			return err
+		}
+	}
+
 	cmd := exec.Command("systemctl", action, installUnit)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -575,6 +582,13 @@ func cmdRestore(args []string) error {
 	}
 	path = expandPath(path)
 
+	// Elevate first. Everything below asks for something — a confirmation, a
+	// passphrase — and asking twice, once here and once in the elevated run,
+	// reads as though the first answer was rejected.
+	if err := needRoot("restoring a backup", "restore", path); err != nil {
+		return err
+	}
+
 	// Recognise the file before asking for a passphrase, so pointing at the
 	// wrong file costs one line rather than a failed decryption.
 	created, err := backup.PeekFile(path)
@@ -601,10 +615,6 @@ func cmdRestore(args []string) error {
 		return err
 	}
 	okf("unlocked")
-
-	if err := requireRoot(); err != nil {
-		return err
-	}
 
 	// Stop the service so nothing writes while files are swapped underneath.
 	wasRunning := serviceState() == "running"
@@ -805,7 +815,7 @@ func cmdUninstall(args []string) error {
 	if err := requireLinux(); err != nil {
 		return err
 	}
-	if err := requireRoot(); err != nil {
+	if err := needRoot("removing Revpd from this machine", uninstallArgv(args)...); err != nil {
 		return err
 	}
 
@@ -895,6 +905,19 @@ func cmdUninstall(args []string) error {
 // distinguishable: one means "nothing left to manage", the other "never mind".
 var errRemoved = errors.New("revpd has been removed")
 
+// uninstallArgv rebuilds the command line for an uninstall, so elevating it
+// keeps --keep-data rather than quietly deleting the database.
+func uninstallArgv(args []string) []string {
+	out := []string{"uninstall"}
+	if has(args, "--keep-data", "-keep-data") {
+		out = append(out, "--keep-data")
+	}
+	// --yes is deliberately not carried over: the confirmation was answered in
+	// this process, and the elevated run asks again. Being asked twice is a
+	// small price for never deleting a database on an unconfirmed run.
+	return out
+}
+
 /* ----------------------------------------------------------------- glue --- */
 
 // open loads the config and the database in one step, which every management
@@ -932,13 +955,6 @@ func runInteractive(name string, args ...string) error {
 func requireLinux() error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("this only works on the Linux machine where Revpd is installed (this is %s)", runtime.GOOS)
-	}
-	return nil
-}
-
-func requireRoot() error {
-	if os.Geteuid() != 0 {
-		return errors.New("this needs root — run it again with sudo")
 	}
 	return nil
 }

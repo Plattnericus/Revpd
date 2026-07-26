@@ -53,6 +53,12 @@ func runMenu() error {
 		if errors.Is(err, errRemoved) {
 			return nil
 		}
+
+		// The action was carried out by a child running as root. It has said
+		// its piece; the menu simply carries on.
+		if errors.Is(err, errElevated) {
+			err = nil
+		}
 		if err != nil {
 			sayf("\n  %serror:%s %v\n", rd, reset, err)
 		}
@@ -198,6 +204,12 @@ func menuUsers() error {
 		if errors.Is(err, errRemoved) {
 			return nil
 		}
+
+		// The action was carried out by a child running as root. It has said
+		// its piece; the menu simply carries on.
+		if errors.Is(err, errElevated) {
+			err = nil
+		}
 		if err != nil {
 			sayf("\n  %serror:%s %v\n", rd, reset, err)
 		}
@@ -237,6 +249,12 @@ func menuTargets() error {
 		// work, so this is where the menu ends.
 		if errors.Is(err, errRemoved) {
 			return nil
+		}
+
+		// The action was carried out by a child running as root. It has said
+		// its piece; the menu simply carries on.
+		if errors.Is(err, errElevated) {
+			err = nil
 		}
 		if err != nil {
 			sayf("\n  %serror:%s %v\n", rd, reset, err)
