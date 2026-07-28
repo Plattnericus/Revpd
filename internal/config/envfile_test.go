@@ -62,9 +62,14 @@ func TestMissingEnvFileIsNotAnError(t *testing.T) {
 }
 
 // It has to be the file the installer writes and the unit file reads.
+//
+// The expectation is built the same way the answer is, because the separator
+// is the host's business: this says "beside the config, called .env", which is
+// the actual rule, on Linux where it ships and on Windows where it is written.
 func TestEnvFilePathSitsBesideTheConfig(t *testing.T) {
-	if got := EnvFilePath("/etc/revpd/revpd.yaml"); got != "/etc/revpd/.env" {
-		t.Errorf("EnvFilePath = %q, want /etc/revpd/.env", got)
+	want := filepath.Join("/etc/revpd", ".env")
+	if got := EnvFilePath("/etc/revpd/revpd.yaml"); got != want {
+		t.Errorf("EnvFilePath = %q, want %q", got, want)
 	}
 }
 

@@ -20,6 +20,12 @@ func TestInstallerUnitMatchesTheShippedOne(t *testing.T) {
 		t.Fatalf("read the installer: %v", err)
 	}
 
+	// Line endings are pinned to LF in .gitattributes for exactly these files,
+	// but a checkout can predate that. This test is about what the unit says,
+	// so it should not be the thing that reports a stray carriage return.
+	installer = []byte(strings.ReplaceAll(string(installer), "\r\n", "\n"))
+	shipped = []byte(strings.ReplaceAll(string(shipped), "\r\n", "\n"))
+
 	embedded := between(string(installer), "cat > \"$SERVICE\" <<'EOF'\n", "\nEOF\n")
 	if embedded == "" {
 		t.Fatal("no unit file found in install.sh — did the heredoc change?")

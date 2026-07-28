@@ -243,6 +243,41 @@ rdgw:
   token_ttl: 5m
 
 
+notify:
+  # Send a short message when something happens that is worth knowing about
+  # away from the machine — somebody connected, an account locked itself, an
+  # approval is waiting. It hangs off the activity log, so anything recorded
+  # there can be reported.
+  #
+  # Off by default: it is the one part of the gateway that talks to a service
+  # nobody here runs.
+  enabled: false
+
+  # Where messages go. Treat this like a password — whoever knows it can post
+  # to that channel — which is why plain HTTP is only accepted to an address
+  # on your own network.
+  #
+  #   https://ntfy.sh/some-hard-to-guess-topic
+  #   https://discord.com/api/webhooks/…
+  #   https://hooks.slack.com/services/…
+  url: ""
+
+  # ntfy | discord | slack | json. Anything else takes the JSON form: a POST
+  # with event, title, body and a timestamp.
+  format: ntfy
+
+  # Which events are worth a message. Everything else is still written to the
+  # activity log; this only decides what leaves the machine.
+  #
+  # Also available: relay.close, relay.rejected, grant.issued, grant.denied,
+  # login.ok, login.fail, mfa.fail, jit.approved, jit.denied, jit.timeout,
+  # wol.sent, target.online, target.timeout, user.created, mfa.reset,
+  # settings.updated, update.applied
+  events: [relay.open, lockout, jit.requested]
+
+  timeout: 10s
+
+
 update:
   # Ask GitHub every few hours whether a newer release exists. One API call,
   # nothing is downloaded, and the dashboard shows what it found.

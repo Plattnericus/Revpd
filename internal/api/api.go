@@ -19,6 +19,7 @@ import (
 	"github.com/plattnericus/revpd/internal/crypto"
 	"github.com/plattnericus/revpd/internal/mfa"
 	"github.com/plattnericus/revpd/internal/netcheck"
+	"github.com/plattnericus/revpd/internal/notify"
 	"github.com/plattnericus/revpd/internal/policy"
 	"github.com/plattnericus/revpd/internal/store"
 	"github.com/plattnericus/revpd/internal/update"
@@ -46,6 +47,11 @@ type Server struct {
 	// public knows how the gateway looks from the internet. Nil where nothing
 	// is detected, which leaves the configured hostname to speak for itself.
 	public *netcheck.Service
+
+	// notifier sends events on to a phone or a chat channel. Held here so a
+	// changed destination applies on save, and so the settings page can offer
+	// to try it.
+	notifier *notify.Notifier
 
 	// fileCfg is the configuration as it came from revpd.yaml and the
 	// environment, before anything stored in the database was layered on. The
@@ -118,6 +124,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/admin/config", s.admin(s.handleSettingsSchema))
 	mux.Handle("POST /api/admin/config", s.admin(s.handleSettingsSave))
 	mux.Handle("POST /api/admin/restart", s.admin(s.handleRestart))
+
+	// Sending a real notification to whatever is configured. A button beats
+	// waiting for the next lockout to find out the URL had a typo in it.
+	mux.Handle("POST /api/admin/notify/test", s.admin(s.handleNotifyTest))
 
 	// How the gateway is reached from outside. Reading is enough to draw the
 	// connect address; looking again reaches out to a third party and opens

@@ -351,6 +351,26 @@ function EnrollStep({
         <Button type="submit" variant="primary" className="mt-3 w-full" disabled={busy || entered.length !== 6} icon={<ShieldCheck size={15} strokeWidth={2} />}>
           {t('login.continue')}
         </Button>
+
+        {/*
+          Past this point the account is already enrolled: the secret above is
+          stored and those backup codes are live. Typing a code only proves the
+          scan worked, so skipping it is a real choice rather than a trap — as
+          long as one of the two is written down, which is what the line below
+          says in as many words.
+        */}
+        <Button
+          type="button"
+          variant="ghost"
+          className="mt-2 w-full"
+          disabled={busy}
+          onClick={onDone}
+        >
+          {t('setup.confirmSkip')}
+        </Button>
+        <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+          {t('setup.confirmSkipHint')}
+        </p>
       </form>
     </Card>
   )

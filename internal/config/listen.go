@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"syscall"
 )
 
 // Bound is a listener together with the address it actually got, which is not
@@ -63,17 +62,31 @@ func Listen(network, primary string, fallbacks []string) (*Bound, error) {
 
 // reason turns a bind error into the thing that is actually wrong, because
 // "address already in use" and "permission denied" need opposite fixes.
+//
+// The wording is ours rather than the operating system's. The same failure is
+// phrased differently on every platform and translated into whatever language
+// the machine is set to, and a log line somebody pastes into a bug report
+// should say the same thing wherever it came from.
 func reason(err error) string {
 	switch {
-	case errors.Is(err, syscall.EADDRINUSE):
+	case isOneOf(err, errsInUse):
 		return "already in use"
-	case errors.Is(err, syscall.EACCES), errors.Is(err, syscall.EPERM):
+	case isOneOf(err, errsDenied):
 		return "not permitted — a port below 1024 needs CAP_NET_BIND_SERVICE"
-	case errors.Is(err, syscall.EADDRNOTAVAIL):
+	case isOneOf(err, errsNoSuchIP):
 		return "no such address on this machine"
 	default:
 		return err.Error()
 	}
+}
+
+func isOneOf(err error, list []error) bool {
+	for _, target := range list {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // Port returns just the port of a host:port address.

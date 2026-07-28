@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/plattnericus/revpd/internal/notify"
 )
 
 /*
@@ -38,6 +40,7 @@ const (
 	KindAddr     Kind = "addr"      // host:port
 	KindAddrList Kind = "addr_list" // comma-separated host:port
 	KindTextList Kind = "text_list" // comma-separated free text
+	KindChoice   Kind = "choice"    // one of Options
 )
 
 // Group is how the settings page is divided. Ordered as they should appear.
@@ -51,12 +54,13 @@ const (
 	GroupRelay   Group = "relay"
 	GroupDesktop Group = "desktop"
 	GroupWake    Group = "wake"
+	GroupNotify  Group = "notify"
 	GroupUpdates Group = "updates"
 )
 
 // Groups in display order.
 var Groups = []Group{
-	GroupPublic, GroupNetwork, GroupAccess, GroupSignIn, GroupRelay, GroupDesktop, GroupWake, GroupUpdates,
+	GroupPublic, GroupNetwork, GroupAccess, GroupSignIn, GroupRelay, GroupDesktop, GroupWake, GroupNotify, GroupUpdates,
 }
 
 // Setting is one editable value.
@@ -84,6 +88,12 @@ type Setting struct {
 	// Warn is shown next to the field when changing it has a consequence that
 	// is not obvious from its name.
 	Warn string
+
+	// Options are the values this setting accepts, where there is a fixed set
+	// of them. A drop-down for a choice; for a list, the names that may appear
+	// in it — which is the difference between a field somebody can fill in and
+	// one they have to find the documentation for.
+	Options []string
 
 	get func(*Config) string
 	set func(*Config, string) error
@@ -186,6 +196,23 @@ func Registry() []Setting {
 			"Windows answers on the network card a moment before Remote Desktop is ready. This waits it out."),
 		integer("wol.repeat", GroupWake, true, 1, 10, func(c *Config) *int { return &c.WoL.Repeat },
 			"How many magic packets to send. More than one covers a dropped datagram."),
+
+		/* -------------------------------------------------------- notify --- */
+
+		// None of these are read at startup only, and the destination is the one
+		// people get wrong on the first try. So they take effect on save, and a
+		// wrong URL costs a correction rather than a restart that would drop
+		// every open desktop session.
+		boolean("notify.enabled", GroupNotify, false, func(c *Config) *bool { return &c.Notify.Enabled },
+			"Send a message when one of the events below happens."),
+		choice("notify.format", GroupNotify, false,
+			[]string{notify.FormatNtfy, notify.FormatDiscord, notify.FormatSlack, notify.FormatJSON},
+			func(c *Config) *string { return &c.Notify.Format },
+			"What the service at the other end expects. Anything else takes the JSON form."),
+		notifyURL("notify.url", GroupNotify, false, func(c *Config) *string { return &c.Notify.URL },
+			"Treat this like a password: whoever has it can post to that channel. https only, except to an address on your own network."),
+		events("notify.events", GroupNotify, false, func(c *Config) *[]string { return &c.Notify.Events },
+			"Which events are worth a message. Everything else is only written to the activity log."),
 
 		/* ------------------------------------------------------- updates --- */
 
@@ -381,6 +408,63 @@ func textList(key string, g Group, restart bool, ptr func(*Config) *[]string, wa
 				if part = strings.TrimSpace(part); part != "" {
 					list = append(list, part)
 				}
+			}
+			*ptr(c) = list
+			return nil
+		},
+	}
+}
+
+// choice is one of a fixed set of values.
+func choice(key string, g Group, restart bool, options []string, ptr func(*Config) *string, warn string) Setting {
+	return Setting{
+		Key: key, Group: g, Kind: KindChoice, Restart: restart, Warn: warn, Options: options,
+		get: func(c *Config) string { return *ptr(c) },
+		set: func(c *Config, v string) error {
+			v = strings.TrimSpace(v)
+			for _, o := range options {
+				if v == o {
+					*ptr(c) = v
+					return nil
+				}
+			}
+			return fmt.Errorf("%q is not one of %s", v, strings.Join(options, ", "))
+		},
+	}
+}
+
+// notifyURL is text that has to be a URL safe to put a shared secret in.
+func notifyURL(key string, g Group, restart bool, ptr func(*Config) *string, warn string) Setting {
+	return Setting{
+		Key: key, Group: g, Kind: KindText, Restart: restart, Warn: warn,
+		get: func(c *Config) string { return *ptr(c) },
+		set: func(c *Config, v string) error {
+			v = strings.TrimSpace(v)
+			if err := notify.CheckURL(v); err != nil {
+				return err
+			}
+			*ptr(c) = v
+			return nil
+		},
+	}
+}
+
+// events is a list drawn from a fixed set, so a typo is caught while somebody
+// is still looking at the field.
+func events(key string, g Group, restart bool, ptr func(*Config) *[]string, warn string) Setting {
+	return Setting{
+		Key: key, Group: g, Kind: KindTextList, Restart: restart, Warn: warn,
+		Options: notify.Notifiable(),
+		get:     func(c *Config) string { return strings.Join(*ptr(c), ", ") },
+		set: func(c *Config, v string) error {
+			var list []string
+			for _, part := range strings.Split(v, ",") {
+				if part = strings.TrimSpace(part); part != "" {
+					list = append(list, part)
+				}
+			}
+			if err := notify.CheckEvents(list); err != nil {
+				return err
 			}
 			*ptr(c) = list
 			return nil

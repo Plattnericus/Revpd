@@ -57,6 +57,32 @@ const (
 	ActionMFAReset       = "mfa.reset"
 )
 
+// Actions lists every action name in the order they are declared above, for
+// anything that has to check whether a name someone typed is real.
+func Actions() []string {
+	return []string{
+		ActionLoginOK, ActionLoginFail, ActionMFAOK, ActionMFAFail, ActionLogout, ActionLockout,
+		ActionGrantIssued, ActionGrantConsumed, ActionGrantRevoked, ActionGrantDenied,
+		ActionWolSent, ActionTargetOnline, ActionTargetTimeout,
+		ActionRelayOpen, ActionRelayClose, ActionRelayRejected,
+		ActionJITRequested, ActionJITApproved, ActionJITDenied, ActionJITTimeout,
+		ActionUserCreated, ActionUserUpdated, ActionUserDeleted,
+		ActionTargetCreated, ActionTargetUpdated, ActionTargetDeleted,
+		ActionSettingsUpdate, ActionUpdateChecked, ActionUpdateStaged, ActionUpdateApplied,
+		ActionEnrollTOTP, ActionEnrollPasskey, ActionMFAReset,
+	}
+}
+
+// KnownAction reports whether name is one of the actions above.
+func KnownAction(name string) bool {
+	for _, a := range Actions() {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Entry is one thing that happened. Detail must never hold secrets.
 type Entry struct {
 	ID     int64          `json:"id"`
@@ -77,6 +103,12 @@ type Log struct {
 	// transaction in append covers the command line running alongside the
 	// service, which is a second process on the same file.
 	mu sync.Mutex
+
+	// Watchers are told about entries that made it into the chain. Registered
+	// at startup and read on every append, which is what the second mutex is
+	// for — the chain mutex must not be held while somebody else's code runs.
+	watchMu  sync.RWMutex
+	watchers []func(Entry)
 }
 
 func New(db *sql.DB) (*Log, error) {
@@ -116,6 +148,35 @@ func (l *Log) Append(ctx context.Context, e Entry) error {
 		return fmt.Errorf("marshal audit detail: %w", err)
 	}
 
+	if err := l.appendChained(ctx, e, string(detail)); err != nil {
+		return err
+	}
+
+	// Only entries that are actually in the chain are announced. A watcher that
+	// heard about a failed write would report something that never happened.
+	l.watchMu.RLock()
+	defer l.watchMu.RUnlock()
+	for _, fn := range l.watchers {
+		fn(e)
+	}
+	return nil
+}
+
+// Watch registers a function to be called after every entry that is written.
+//
+// It runs on the goroutine that logged the event — which is often one holding a
+// TCP connection open — so a watcher must return promptly and do its real work
+// somewhere else.
+func (l *Log) Watch(fn func(Entry)) {
+	if fn == nil {
+		return
+	}
+	l.watchMu.Lock()
+	defer l.watchMu.Unlock()
+	l.watchers = append(l.watchers, fn)
+}
+
+func (l *Log) appendChained(ctx context.Context, e Entry, detail string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -130,8 +191,9 @@ func (l *Log) Append(ctx context.Context, e Entry) error {
 	// So the head is read and extended inside a single transaction. When the
 	// other writer wins the race SQLite refuses the commit, and we take a
 	// fresh look rather than writing a fork.
+	var err error
 	for attempt := 0; attempt < 8; attempt++ {
-		if err = l.appendOnce(ctx, e, ts, string(detail)); err == nil {
+		if err = l.appendOnce(ctx, e, ts, detail); err == nil {
 			return nil
 		}
 		if ctx.Err() != nil {

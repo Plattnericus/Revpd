@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/plattnericus/revpd/internal/netcheck"
+	"github.com/plattnericus/revpd/internal/notify"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,6 +26,7 @@ type Config struct {
 	WoL      WoL      `yaml:"wol"`
 	Auth     Auth     `yaml:"auth"`
 	RDGW     RDGW     `yaml:"rdgw"`
+	Notify   Notify   `yaml:"notify"`
 	Update   Update   `yaml:"update"`
 }
 
@@ -214,6 +216,32 @@ type RDGW struct {
 	TokenTTL time.Duration `yaml:"token_ttl"`
 }
 
+// Notify sends a short message to a phone or a chat channel when something
+// happens that somebody would want to know about away from the machine.
+//
+// Off by default. It is the one part of the gateway that talks to a service
+// nobody here runs, and that should be a decision rather than a surprise.
+type Notify struct {
+	Enabled bool `yaml:"enabled"`
+
+	// URL is where messages go: an ntfy topic, a Discord or Slack webhook, or
+	// anything that accepts a JSON POST.
+	//
+	// It is a credential in its own right — whoever knows it can post to that
+	// channel — which is why plain HTTP is only allowed to an address on this
+	// network, and why it never appears in a log line.
+	URL string `yaml:"url"`
+
+	// Format shapes the request for the service at the other end.
+	Format string `yaml:"format"`
+
+	// Events are audit action names. The log records far more than anybody
+	// wants on their phone, so this list is short by default.
+	Events []string `yaml:"events"`
+
+	Timeout time.Duration `yaml:"timeout"`
+}
+
 // Update controls how the gateway keeps itself current.
 //
 // Checking is on by default and costs one API call every few hours. Installing
@@ -318,6 +346,12 @@ func Defaults() Config {
 			Enabled:  false,
 			Listen:   ":443",
 			TokenTTL: 5 * time.Minute,
+		},
+		Notify: Notify{
+			Enabled: false, // it reaches out to a third party; opt in first
+			Format:  notify.FormatNtfy,
+			Events:  notify.DefaultEvents(),
+			Timeout: 10 * time.Second,
 		},
 		Update: Update{
 			Enabled:       true,
@@ -436,6 +470,11 @@ func (c *Config) applyEnv() {
 	dur("REVPD_JIT_HOLD_TIMEOUT", &c.JIT.HoldTimeout)
 	boolean("REVPD_RDGW_ENABLED", &c.RDGW.Enabled)
 	boolean("REVPD_REQUIRE_SECOND_FACTOR", &c.Auth.RequireSecondFactor)
+	boolean("REVPD_NOTIFY_ENABLED", &c.Notify.Enabled)
+	str("REVPD_NOTIFY_URL", &c.Notify.URL)
+	str("REVPD_NOTIFY_FORMAT", &c.Notify.Format)
+	list("REVPD_NOTIFY_EVENTS", &c.Notify.Events)
+	dur("REVPD_NOTIFY_TIMEOUT", &c.Notify.Timeout)
 	boolean("REVPD_UPDATE_ENABLED", &c.Update.Enabled)
 	boolean("REVPD_UPDATE_AUTO_INSTALL", &c.Update.AutoInstall)
 	boolean("REVPD_UPDATE_PRERELEASE", &c.Update.Prerelease)
@@ -462,6 +501,17 @@ func (c Config) MasterKey() string {
 		env = "REVPD_MASTER_KEY"
 	}
 	return strings.TrimSpace(os.Getenv(env))
+}
+
+// NotifyConfig is the notification settings in the form the notifier takes.
+func (c Config) NotifyConfig() notify.Config {
+	return notify.Config{
+		Enabled: c.Notify.Enabled,
+		URL:     strings.TrimSpace(c.Notify.URL),
+		Format:  c.Notify.Format,
+		Events:  c.Notify.Events,
+		Timeout: c.Notify.Timeout,
+	}
 }
 
 // Duo returns the push-approval credentials, empty when not configured.
@@ -676,6 +726,25 @@ func (c Config) Validate() error {
 	}
 	if c.Auth.BackupCodes < 0 || c.Auth.BackupCodes > 50 {
 		problems = append(problems, "auth.backup_codes must be between 0 and 50")
+	}
+	if err := notify.CheckURL(c.Notify.URL); err != nil {
+		problems = append(problems, "notify.url: "+err.Error())
+	}
+	if c.Notify.Format != "" {
+		if err := notify.CheckFormat(c.Notify.Format); err != nil {
+			problems = append(problems, "notify.format: "+err.Error())
+		}
+	}
+	if err := notify.CheckEvents(c.Notify.Events); err != nil {
+		problems = append(problems, "notify.events: "+err.Error())
+	}
+	if c.Notify.Enabled {
+		if strings.TrimSpace(c.Notify.URL) == "" {
+			problems = append(problems, "notify.enabled is on but notify.url is empty — there is nowhere to send to")
+		}
+		if len(c.Notify.Events) == 0 {
+			problems = append(problems, "notify.enabled is on but notify.events is empty — nothing would ever be sent")
+		}
 	}
 	if c.Update.Enabled && c.Update.CheckInterval < 15*time.Minute {
 		// GitHub allows 60 anonymous API calls an hour per address. Checking

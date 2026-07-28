@@ -46,6 +46,7 @@ const en: Labels = {
   'auth.lockout_base': 'First lockout',
   'auth.lockout_max': 'Longest lockout',
   'auth.totp_skew': 'Clock tolerance',
+  'auth.require_second_factor': 'Require a second factor',
   'auth.backup_codes': 'Backup codes',
 
   // Relay
@@ -68,6 +69,11 @@ const en: Labels = {
   'wol.repeat': 'Magic packets',
 
   // Updates
+  'notify.enabled': 'Send notifications',
+  'notify.format': 'Service',
+  'notify.url': 'Destination',
+  'notify.events': 'Events',
+
   'update.enabled': 'Check for updates',
   'update.auto_install': 'Install automatically',
   'update.only_when_idle': 'Only when nobody is connected',
@@ -103,6 +109,7 @@ const de: Labels = {
   'auth.lockout_base': 'Erste Sperre',
   'auth.lockout_max': 'Längste Sperre',
   'auth.totp_skew': 'Uhrzeit-Toleranz',
+  'auth.require_second_factor': 'Zweiten Faktor verlangen',
   'auth.backup_codes': 'Backup-Codes',
 
   'relay.tarpit': 'Tarpit',
@@ -120,6 +127,11 @@ const de: Labels = {
   'wol.probe_interval': 'Prüfen alle',
   'wol.probe_settle': 'Nachlaufzeit',
   'wol.repeat': 'Magic Packets',
+
+  'notify.enabled': 'Benachrichtigungen senden',
+  'notify.format': 'Dienst',
+  'notify.url': 'Ziel',
+  'notify.events': 'Ereignisse',
 
   'update.enabled': 'Nach Updates suchen',
   'update.auto_install': 'Automatisch installieren',
@@ -156,6 +168,7 @@ const fr: Labels = {
   'auth.lockout_base': 'Premier blocage',
   'auth.lockout_max': 'Blocage maximal',
   'auth.totp_skew': 'Tolérance d’horloge',
+  'auth.require_second_factor': 'Exiger un second facteur',
   'auth.backup_codes': 'Codes de secours',
 
   'relay.tarpit': 'Tarpit',
@@ -173,6 +186,11 @@ const fr: Labels = {
   'wol.probe_interval': 'Vérifier toutes les',
   'wol.probe_settle': 'Temps de stabilisation',
   'wol.repeat': 'Paquets magiques',
+
+  'notify.enabled': 'Envoyer des notifications',
+  'notify.format': 'Service',
+  'notify.url': 'Destination',
+  'notify.events': 'Événements',
 
   'update.enabled': 'Rechercher des mises à jour',
   'update.auto_install': 'Installer automatiquement',
@@ -209,6 +227,7 @@ const es: Labels = {
   'auth.lockout_base': 'Primer bloqueo',
   'auth.lockout_max': 'Bloqueo máximo',
   'auth.totp_skew': 'Tolerancia de reloj',
+  'auth.require_second_factor': 'Exigir un segundo factor',
   'auth.backup_codes': 'Códigos de respaldo',
 
   'relay.tarpit': 'Tarpit',
@@ -226,6 +245,11 @@ const es: Labels = {
   'wol.probe_interval': 'Comprobar cada',
   'wol.probe_settle': 'Tiempo de estabilización',
   'wol.repeat': 'Paquetes mágicos',
+
+  'notify.enabled': 'Enviar avisos',
+  'notify.format': 'Servicio',
+  'notify.url': 'Destino',
+  'notify.events': 'Eventos',
 
   'update.enabled': 'Buscar actualizaciones',
   'update.auto_install': 'Instalar automáticamente',
@@ -262,6 +286,7 @@ const it: Labels = {
   'auth.lockout_base': 'Primo blocco',
   'auth.lockout_max': 'Blocco massimo',
   'auth.totp_skew': 'Tolleranza orologio',
+  'auth.require_second_factor': 'Richiedere un secondo fattore',
   'auth.backup_codes': 'Codici di riserva',
 
   'relay.tarpit': 'Tarpit',
@@ -279,6 +304,11 @@ const it: Labels = {
   'wol.probe_interval': 'Controlla ogni',
   'wol.probe_settle': 'Tempo di assestamento',
   'wol.repeat': 'Pacchetti magici',
+
+  'notify.enabled': 'Inviare notifiche',
+  'notify.format': 'Servizio',
+  'notify.url': 'Destinazione',
+  'notify.events': 'Eventi',
 
   'update.enabled': 'Cerca aggiornamenti',
   'update.auto_install': 'Installa automaticamente',
@@ -315,6 +345,7 @@ const nl: Labels = {
   'auth.lockout_base': 'Eerste blokkade',
   'auth.lockout_max': 'Langste blokkade',
   'auth.totp_skew': 'Kloktolerantie',
+  'auth.require_second_factor': 'Tweede factor vereisen',
   'auth.backup_codes': 'Back-upcodes',
 
   'relay.tarpit': 'Tarpit',
@@ -332,6 +363,11 @@ const nl: Labels = {
   'wol.probe_interval': 'Controleer elke',
   'wol.probe_settle': 'Stabilisatietijd',
   'wol.repeat': 'Magic packets',
+
+  'notify.enabled': 'Meldingen versturen',
+  'notify.format': 'Dienst',
+  'notify.url': 'Bestemming',
+  'notify.events': 'Gebeurtenissen',
 
   'update.enabled': 'Zoeken naar updates',
   'update.auto_install': 'Automatisch installeren',
@@ -368,6 +404,7 @@ const pl: Labels = {
   'auth.lockout_base': 'Pierwsza blokada',
   'auth.lockout_max': 'Najdłuższa blokada',
   'auth.totp_skew': 'Tolerancja zegara',
+  'auth.require_second_factor': 'Wymagaj drugiego składnika',
   'auth.backup_codes': 'Kody zapasowe',
 
   'relay.tarpit': 'Tarpit',
@@ -385,6 +422,11 @@ const pl: Labels = {
   'wol.probe_interval': 'Sprawdzaj co',
   'wol.probe_settle': 'Czas ustabilizowania',
   'wol.repeat': 'Pakiety magiczne',
+
+  'notify.enabled': 'Wysyłaj powiadomienia',
+  'notify.format': 'Usługa',
+  'notify.url': 'Adres docelowy',
+  'notify.events': 'Zdarzenia',
 
   'update.enabled': 'Sprawdzaj aktualizacje',
   'update.auto_install': 'Instaluj automatycznie',
@@ -421,6 +463,7 @@ const pt: Labels = {
   'auth.lockout_base': 'Primeiro bloqueio',
   'auth.lockout_max': 'Bloqueio máximo',
   'auth.totp_skew': 'Tolerância do relógio',
+  'auth.require_second_factor': 'Exigir um segundo fator',
   'auth.backup_codes': 'Códigos de recuperação',
 
   'relay.tarpit': 'Tarpit',
@@ -438,6 +481,11 @@ const pt: Labels = {
   'wol.probe_interval': 'Verificar a cada',
   'wol.probe_settle': 'Tempo de estabilização',
   'wol.repeat': 'Pacotes mágicos',
+
+  'notify.enabled': 'Enviar notificações',
+  'notify.format': 'Serviço',
+  'notify.url': 'Destino',
+  'notify.events': 'Eventos',
 
   'update.enabled': 'Procurar atualizações',
   'update.auto_install': 'Instalar automaticamente',
@@ -474,6 +522,7 @@ const tr: Labels = {
   'auth.lockout_base': 'İlk kilitlenme',
   'auth.lockout_max': 'En uzun kilitlenme',
   'auth.totp_skew': 'Saat toleransı',
+  'auth.require_second_factor': 'İkinci faktör iste',
   'auth.backup_codes': 'Yedek kodlar',
 
   'relay.tarpit': 'Tarpit',
@@ -491,6 +540,11 @@ const tr: Labels = {
   'wol.probe_interval': 'Kontrol aralığı',
   'wol.probe_settle': 'Yerleşme süresi',
   'wol.repeat': 'Sihirli paketler',
+
+  'notify.enabled': 'Bildirim gönder',
+  'notify.format': 'Hizmet',
+  'notify.url': 'Hedef',
+  'notify.events': 'Olaylar',
 
   'update.enabled': 'Güncellemeleri ara',
   'update.auto_install': 'Otomatik kur',
@@ -527,6 +581,7 @@ const ru: Labels = {
   'auth.lockout_base': 'Первая блокировка',
   'auth.lockout_max': 'Максимальная блокировка',
   'auth.totp_skew': 'Допуск часов',
+  'auth.require_second_factor': 'Требовать второй фактор',
   'auth.backup_codes': 'Резервные коды',
 
   'relay.tarpit': 'Tarpit',
@@ -544,6 +599,11 @@ const ru: Labels = {
   'wol.probe_interval': 'Проверять каждые',
   'wol.probe_settle': 'Время стабилизации',
   'wol.repeat': 'Magic-пакеты',
+
+  'notify.enabled': 'Отправлять уведомления',
+  'notify.format': 'Сервис',
+  'notify.url': 'Адрес',
+  'notify.events': 'События',
 
   'update.enabled': 'Проверять обновления',
   'update.auto_install': 'Устанавливать автоматически',

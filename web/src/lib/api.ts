@@ -197,6 +197,9 @@ export const api = {
 
   restart: () => post<{ ok: boolean; sessions_dropped: number }>('/api/admin/restart'),
 
+  /** Sends a real notification to the saved destination, and says what happened. */
+  testNotify: () => post<{ ok: boolean }>('/api/admin/notify/test'),
+
   /* -------------------------------------------------- from outside --- */
 
   network: () => get<ApiNetwork>('/api/admin/network'),
@@ -354,6 +357,7 @@ export type SettingKind =
   | 'addr'
   | 'addr_list'
   | 'text_list'
+  | 'choice'
 
 /*
   How the gateway looks from the internet, which its own sockets cannot see:
@@ -429,6 +433,8 @@ export interface ApiSetting {
   /** True when the value is only read while starting up. */
   restart: boolean
   warn?: string
+  /** The values this setting accepts, where there is a fixed set of them. */
+  options?: string[]
   overridden: boolean
   changed_by?: string
   changed_at?: string

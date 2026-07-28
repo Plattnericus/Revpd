@@ -26,6 +26,7 @@ import (
 	"github.com/plattnericus/revpd/internal/mfa"
 	"github.com/plattnericus/revpd/internal/mfa/duo"
 	"github.com/plattnericus/revpd/internal/netcheck"
+	"github.com/plattnericus/revpd/internal/notify"
 	"github.com/plattnericus/revpd/internal/policy"
 	"github.com/plattnericus/revpd/internal/proxy/rdp"
 	"github.com/plattnericus/revpd/internal/proxy/relay"
@@ -277,6 +278,13 @@ func cmdServe(args []string) error {
 		slog.Info("duo push approvals enabled", "api_host", host)
 	}
 
+	// Notifications hang off the audit log: everything worth telling somebody
+	// about is written there already, and one hook beats a call to a notifier
+	// scattered through the relay, the engine and the login path.
+	notifier := notify.New(cfg.NotifyConfig())
+	log.Watch(notifier.Handle)
+	go notifier.Run(ctx)
+
 	engine := policy.New(db, log, cfg, approver).WithSecrets(sealer, authMgr)
 
 	// The RDP-native login: credentials are typed into the Windows client and
@@ -361,6 +369,7 @@ func cmdServe(args []string) error {
 		WithUpdates(updater, version).
 		WithPortal(portal.Addr).
 		WithPublic(publicAddr).
+		WithNotifier(notifier).
 		WithFileConfig(fileCfg)
 	httpSrv := &http.Server{
 		Handler:           apiSrv.Handler(),

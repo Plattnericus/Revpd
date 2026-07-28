@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# These are read by Linux no matter which machine they were checked out on.
+# A CRLF checkout on Windows turns the shebang into "/usr/bin/env bash\r",
+# which the kernel cannot find, and systemd is no fonder of the stray carriage
+# returns in a unit file. Pin them.
+*.sh text eol=lf
+*.service text eol=lf
+*.path text eol=lf
+Dockerfile text eol=lf

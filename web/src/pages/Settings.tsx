@@ -6,6 +6,7 @@ import { UpdatePanel, useUpdateStatus } from '../components/UpdateCard'
 import { api, type ApiConfig, type ApiNetwork, type ApiSetting } from '../lib/api'
 import { useLang, useT } from '../lib/lang'
 import { settingLabel } from '../lib/i18n.settings'
+import { settingHint } from '../lib/i18n.hints'
 import type { Key } from '../lib/i18n'
 
 /*
@@ -178,6 +179,10 @@ export function Settings() {
                 />
               ))}
             </div>
+
+            {/* A wrong topic or a revoked webhook is otherwise discovered by
+                the alert that never arrives. */}
+            {group === 'notify' && <NotifyTest unsaved={dirty} />}
           </Card>
         )
       })}
@@ -285,10 +290,20 @@ function Row({
             {setting.key}
           </p>
 
-          {setting.warn && (
+          {/* Translated where somebody has written it; the server's English
+              line stands in for a setting added since. */}
+          {(settingHint(lang, setting.key) || setting.warn) && (
             <p className="mt-1 flex items-start gap-1.5 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
               <Info size={12} strokeWidth={2} className="mt-[3px] shrink-0" />
-              {setting.warn}
+              {settingHint(lang, setting.key) || setting.warn}
+            </p>
+          )}
+
+          {/* A list drawn from a fixed set is unusable without the set. */}
+          {setting.kind === 'text_list' && setting.options && (
+            <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+              {t('settings.allowedValues')}{' '}
+              <span className="font-mono">{setting.options.join(' · ')}</span>
             </p>
           )}
 
@@ -344,6 +359,25 @@ function Control({
     )
   }
 
+  if (setting.kind === 'choice' && setting.options) {
+    return (
+      <select
+        value={value}
+        disabled={disabled}
+        aria-label={setting.key}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full rounded-[10px] border px-2 text-[13px] outline-none"
+        style={{ background: 'var(--surface-sunken)', color: 'var(--text)' }}
+      >
+        {setting.options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    )
+  }
+
   if (setting.kind === 'duration') {
     return <DurationField value={value} disabled={disabled} onChange={onChange} />
   }
@@ -368,7 +402,11 @@ function Control({
       disabled={disabled}
       mono
       placeholder={setting.kind === 'addr' ? ':443' : undefined}
-      hint={setting.kind === 'addr_list' ? t('settings.commaSeparated') : undefined}
+      hint={
+        setting.kind === 'addr_list' || setting.kind === 'text_list'
+          ? t('settings.commaSeparated')
+          : undefined
+      }
       onChange={(e) => onChange(e.target.value)}
     />
   )
@@ -425,6 +463,57 @@ function DurationField({
           </option>
         ))}
       </select>
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------- notify test --- */
+
+/*
+  Sending one real message to whatever is configured.
+
+  Real rather than simulated, because the failures worth catching — a topic
+  name with a typo in it, a webhook that was revoked, a firewall that does not
+  let this machine out — all look fine from here and only show up at the far
+  end. The alternative is finding out from the alert that never came.
+*/
+function NotifyTest({ unsaved }: { unsaved: boolean }) {
+  const t = useT()
+  const [state, setState] = useState<'' | 'busy' | 'sent'>('')
+  const [error, setError] = useState('')
+
+  const run = async () => {
+    setState('busy')
+    setError('')
+    try {
+      await api.testNotify()
+      setState('sent')
+      setTimeout(() => setState(''), 4000)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setState('')
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-t px-5 py-3.5">
+      <Button size="sm" variant="ghost" onClick={run} disabled={state === 'busy' || unsaved}>
+        {state === 'busy' ? t('settings.notifyTesting') : t('settings.notifyTest')}
+      </Button>
+      <span className="min-w-0 flex-1 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
+        {/* The test uses what is saved, so offering it mid-edit would test the
+            old value and report success for a URL nobody has yet. */}
+        {unsaved
+          ? t('settings.notifySaveFirst')
+          : state === 'sent'
+            ? t('settings.notifySent')
+            : t('settings.notifyTestHint')}
+      </span>
+      {error && (
+        <span className="w-full text-[12.5px]" style={{ color: 'var(--red)' }}>
+          {error}
+        </span>
+      )}
     </div>
   )
 }

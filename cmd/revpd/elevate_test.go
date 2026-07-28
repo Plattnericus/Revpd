@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -22,6 +23,14 @@ import (
 // and runs whatever it was asked to run.
 func fakeSudo(t *testing.T, behaviour string) (dir, log string) {
 	t.Helper()
+
+	// sudo, an effective uid and a shell script that PATH will pick up are all
+	// Unix ideas. Windows 11 even ships its own sudo.exe, which would be found
+	// before the stand-in below and would do something quite different. This
+	// runs where the code runs; CI is Linux.
+	if runtime.GOOS == "windows" {
+		t.Skip("elevation is done through sudo; there is no equivalent to exercise on Windows")
+	}
 
 	dir = t.TempDir()
 	log = filepath.Join(dir, "called")

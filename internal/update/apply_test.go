@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +31,14 @@ type bed struct {
 
 func newBed(t *testing.T, currentVersion, stagedVersion string) *bed {
 	t.Helper()
+
+	// The applier restarts a systemd unit and swaps a Unix binary, and the bed
+	// below fakes both with shell scripts. None of that exists on Windows, so
+	// there is nothing here to exercise — the machine this is developed on is
+	// not the machine it runs on. CI is Linux and runs the lot.
+	if runtime.GOOS == "windows" {
+		t.Skip("the applier drives systemd; nothing to exercise on Windows")
+	}
 
 	root := t.TempDir()
 	b := &bed{

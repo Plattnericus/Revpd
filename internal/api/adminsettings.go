@@ -46,10 +46,11 @@ type settingView struct {
 	// File is what revpd.yaml and the environment say on their own.
 	File string `json:"file"`
 
-	Min     int64  `json:"min,omitempty"`
-	Max     int64  `json:"max,omitempty"`
-	Restart bool   `json:"restart"`
-	Warn    string `json:"warn,omitempty"`
+	Min     int64    `json:"min,omitempty"`
+	Max     int64    `json:"max,omitempty"`
+	Restart bool     `json:"restart"`
+	Warn    string   `json:"warn,omitempty"`
+	Options []string `json:"options,omitempty"`
 
 	// Pending means this value has been saved but the running process is still
 	// using the old one. Showing the saved value with a marker beats showing
@@ -88,6 +89,7 @@ func (s *Server) handleSettingsSchema(w http.ResponseWriter, r *http.Request) {
 			Max:     def.Max,
 			Restart: def.NeedsRestart(),
 			Warn:    def.Warn,
+			Options: def.Options,
 			Pending: def.NeedsRestart() && value != running,
 		}
 		if m, ok := meta[def.Key]; ok {
@@ -189,8 +191,15 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 	// The public host is only ever displayed or written into a .rdp file, so a
 	// change to it can take hold now instead of waiting for a restart that
 	// would drop every open desktop session.
+	applied := s.wantedConfig(r.Context())
 	if s.public != nil {
-		s.public.SetHost(s.wantedConfig(r.Context()).PublicHost())
+		s.public.SetHost(applied.PublicHost())
+	}
+
+	// Same reasoning, and it matters more here: the destination is what people
+	// get wrong first, and correcting it should not cost anybody their session.
+	if s.notifier != nil {
+		s.notifier.Configure(applied.NotifyConfig())
 	}
 
 	changed := make([]string, 0, len(req.Values)+len(req.Reset))

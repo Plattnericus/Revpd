@@ -22,6 +22,7 @@ import (
 	"github.com/plattnericus/revpd/internal/crypto"
 	"github.com/plattnericus/revpd/internal/mfa"
 	"github.com/plattnericus/revpd/internal/netcheck"
+	"github.com/plattnericus/revpd/internal/notify"
 	"github.com/plattnericus/revpd/internal/policy"
 	"github.com/plattnericus/revpd/internal/store"
 	"github.com/pquerna/otp/totp"
@@ -109,8 +110,20 @@ func newAPIWith(t *testing.T, tune func(*config.Config)) *apiEnv {
 		}),
 	})
 
+	// Wired the way main.go wires it: hung off the audit log, with its sender
+	// running, so nothing here is testing a shape production does not have.
+	notifier := notify.New(cfg.NotifyConfig())
+	log.Watch(notifier.Handle)
+
+	sendCtx, stopSending := context.WithCancel(ctx)
+	go notifier.Run(sendCtx)
+	t.Cleanup(stopSending)
+
 	srv := httptest.NewServer(
-		api.New(db, log, cfg, am, engine, sealer, nil).WithPublic(public).Handler())
+		api.New(db, log, cfg, am, engine, sealer, nil).
+			WithPublic(public).
+			WithNotifier(notifier).
+			Handler())
 	t.Cleanup(srv.Close)
 
 	return &apiEnv{srv: srv, db: db, secret: secret, public: public}

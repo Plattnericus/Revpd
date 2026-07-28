@@ -27,6 +27,7 @@ You (Remote Desktop)  →  Revpd  →  MFA  →  Wake-on-LAN  →  your PC
 | **Manage it from a menu** | Type `revpd` and everything is a numbered choice. No flags to memorise. |
 | **Move to new hardware** | One encrypted backup file holds everything. Copy it over, restore, done. |
 | **See who did what** | A tamper-evident log. `revpd audit verify` proves nobody edited it. |
+| **Hear about it** | A message on your phone when somebody connects or an account locks itself. |
 
 Everything is one file: a static binary, about 18 MB, no runtime to install and
 no database to set up.
@@ -232,6 +233,30 @@ account and scanning a QR code. After that: machines, users, access, the
 activity log, and a wake button as a fallback.
 
 Ten languages, light and dark, works on a phone.
+
+### Getting told about it
+
+Settings → Notifications sends a short message when something happens that is
+worth knowing about while you are away from the machine: somebody connected, an
+account locked itself, an approval is waiting.
+
+```
+Remote desktop connected
+felix → Büro-PC from 203.0.113.9
+```
+
+It goes to an [ntfy](https://ntfy.sh) topic, a Discord or Slack webhook, or any
+URL that takes a JSON POST. The destination is a password in its own right —
+whoever has it can post to that channel — so plain HTTP is only accepted to an
+address on your own network, and it never appears in a log line.
+
+Pick the events yourself; `relay.open`, `lockout` and `jit.requested` are the
+default. A burst is rate-limited to five messages and then one every half
+minute, with the number held back written into the next one — a gateway being
+guessed at should wake you once, not forty times.
+
+**Send a test** posts a real message, because a topic name with a typo in it
+looks fine from here and is otherwise discovered by the alert that never came.
 
 ---
 

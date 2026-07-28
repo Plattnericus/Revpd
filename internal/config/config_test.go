@@ -88,6 +88,24 @@ func TestValidateRejectsBadValues(t *testing.T) {
 			c.JIT.Enabled = true
 			c.JIT.HoldTimeout = 0
 		}},
+		{"notifications with nowhere to send", "notify.url", func(c *config.Config) {
+			c.Notify.Enabled = true
+			c.Notify.URL = ""
+		}},
+		{"notification url over plain http", "notify.url", func(c *config.Config) {
+			c.Notify.URL = "http://ntfy.sh/alerts"
+		}},
+		{"unknown notification format", "notify.format", func(c *config.Config) {
+			c.Notify.Format = "telegram"
+		}},
+		{"notification event that does not exist", "notify.events", func(c *config.Config) {
+			c.Notify.Events = []string{"relay.opened"}
+		}},
+		{"notifications with nothing to report", "notify.events", func(c *config.Config) {
+			c.Notify.Enabled = true
+			c.Notify.URL = "https://ntfy.sh/alerts"
+			c.Notify.Events = nil
+		}},
 	}
 
 	for _, tc := range cases {
