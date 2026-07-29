@@ -164,6 +164,11 @@ func (s Scanner) Sweep(ctx context.Context, cidr string) ([]Host, error) {
 	s.attachHardware(found)
 	s.attachNames(ctx, found)
 
+	// Enriches what is already found; never widens the scan. Nmap only runs
+	// against addresses that already answered something, on ports already
+	// known to be open, and only if it happens to be installed.
+	s.enrichWithNmap(ctx, found)
+
 	sort.Slice(found, func(i, j int) bool { return lessIP(found[i].IP, found[j].IP) })
 	return found, nil
 }
@@ -210,6 +215,7 @@ func (s Scanner) Probe(ctx context.Context, ip string) (*Host, error) {
 	one := []Host{*h}
 	s.attachHardware(one)
 	one[0].Hostname = reverseDNS(ctx, one[0].IP)
+	s.enrichWithNmap(ctx, one)
 
 	return &one[0], nil
 }

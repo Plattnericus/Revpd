@@ -22,6 +22,13 @@ for (const path of ['/', '/targets', '/users', '/activity', '/settings', '/login
 }
 check('setup', '/setup', null, 'the wizard itself is where it belongs')
 
+/* --------------------- signed in, wizard never finished --- */
+
+for (const path of ['/', '/targets', '/users', '/activity', '/settings', '/login', '/mfa', '/enroll']) {
+  check('onboarding', path, '/setup', `an unfinished wizard sends ${path} back, even though ${path} would work`)
+}
+check('onboarding', '/setup', null, 'resuming the wizard is where it belongs')
+
 /* ---------------------------------------------------------- signed out --- */
 
 check('out', '/', '/login', 'the overview needs a session')
@@ -77,4 +84,4 @@ if (failures > 0) {
   console.error(`\n${failures} failed`)
   process.exit(1)
 }
-console.log('ok — redirect rules hold for setup, signed out, half signed in and signed in')
+console.log('ok — redirect rules hold for setup, an unfinished wizard, signed out, half signed in and signed in')

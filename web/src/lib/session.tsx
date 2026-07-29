@@ -19,6 +19,7 @@ import { api, onUnauthorized } from './api'
 export type SessionStatus =
   | 'checking' // the first answer has not arrived yet
   | 'setup' // no accounts exist; the wizard is the only place to be
+  | 'onboarding' // an account exists and is signed in, but never finished the wizard
   | 'out' // nobody is signed in
   | 'in' // signed in, second factor included
 
@@ -57,6 +58,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     const mine = ++generation.current
 
+    let setupComplete = true
     try {
       const setup = await api.setupStatus()
       if (mine !== generation.current) return
@@ -66,6 +68,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setUser(null)
         return
       }
+      setupComplete = setup.setup_complete
     } catch {
       // The status endpoint is public and always answers. If it did not, the
       // gateway is unreachable rather than the session invalid — treat it as
@@ -81,13 +84,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (mine !== generation.current) return
 
       setUser({ username: me.username, displayName: me.display_name, role: me.role })
-      setStatus('in')
+      // Signed in, but the wizard was never walked to its last screen —
+      // a refresh belongs back there, not on a dashboard nobody has set up
+      // yet, with nothing left to say so.
+      setStatus(setupComplete ? 'in' : 'onboarding')
     } catch {
       if (mine !== generation.current) return
 
       // 401 is the ordinary "not signed in"; anything else means the request
       // failed outright. Either way the login screen is the honest place to
-      // be, because no page behind it can load its data.
+      // be, because no page behind it can load its data. An unfinished
+      // wizard changes nothing here — signing in is still the first step,
+      // and doing that again lands back in this same check with a session.
       setUser(null)
       setStatus('out')
     }
@@ -150,8 +158,11 @@ export function destination(status: SessionStatus, pathname: string): string | n
   // Nothing is known yet, so nothing is decided.
   if (status === 'checking') return null
 
-  // A gateway with no accounts has exactly one useful page.
-  if (status === 'setup') {
+  // A gateway with no accounts has exactly one useful page — and so does one
+  // whose only account has never finished the wizard. The difference between
+  // the two is invisible here on purpose: both send everything to /setup,
+  // which is what tells them apart once it loads.
+  if (status === 'setup' || status === 'onboarding') {
     return pathname === SETUP_PATH ? null : SETUP_PATH
   }
 

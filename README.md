@@ -138,6 +138,14 @@ sudo revpd target add "Office PC" 192.168.1.40 aa:bb:cc:dd:ee:ff --for felix
 
 The MAC address is what wakes it. Any format works.
 
+Or skip typing any of it: **Ziele → Geräte suchen** looks around the network,
+works out which machines answer to Remote Desktop and which are something
+else, and fills in the address and MAC for you — a "Nur Windows anzeigen"
+checkbox clears away everything that isn't a target worth adding. If
+[nmap](https://nmap.org) is installed it is asked too, for a second opinion
+built from real service banners rather than guesswork — never for the raw
+packet scans that would need more than this process is ever given.
+
 **2. Forward two ports on your router to this server**
 
 | Port | For |
@@ -401,6 +409,7 @@ After that Revpd stops looking at the traffic entirely and just copies bytes.
 | Redirect tokens | single use, tied to your address, valid 60 seconds |
 | Brute force | escalating lockout per account and per address, tarpit on 3389 |
 | The log | hash-chained and append-only |
+| Access log | one structured line per web request — method, path, status, timing, who was signed in — never a body, header or token |
 | The process | never runs as root |
 | Error messages | wrong password, unknown account and wrong code are indistinguishable |
 

@@ -59,6 +59,11 @@ func (s *Server) openDuringSetup(h http.HandlerFunc) http.Handler {
 	})
 }
 
+// setupCompleteKey is an internal flag, not a setting anyone edits — it never
+// appears in config.Registry, so it never shows up on the settings page. It
+// exists purely to tell a returning browser apart from a fresh one.
+const setupCompleteKey = "setup.completed"
+
 // handleSetupStatus tells the UI whether to show the wizard. Safe to call at
 // any time, which is why it is not behind openDuringSetup.
 func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +86,29 @@ func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 		// here rather than in the browser: a skip button that leads to an
 		// account which then cannot sign in would be worse than no button.
 		"second_factor_required": s.cfg.Auth.RequireSecondFactor,
+
+		// False for as long as the wizard has never been walked to its last
+		// screen — including the whole time there are no accounts at all.
+		// The browser uses this to resume the wizard rather than land a
+		// refresh on an empty dashboard that never asks again.
+		"setup_complete": !needed && s.db.BoolSetting(r.Context(), setupCompleteKey, false),
 	})
+}
+
+// handleSetupComplete marks the wizard as walked to its end.
+//
+// Behind the normal session guard rather than openDuringSetup: unlike the
+// steps before it, this only makes sense once an account already exists and
+// somebody is signed in as it — there is nothing to race, and nothing here
+// changes what anyone may do, only whether a refresh sends them back to the
+// wizard or lets them stay on the page they landed on.
+func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
+	u := userFrom(r.Context())
+	if err := s.db.SetBoolSetting(r.Context(), setupCompleteKey, true, u.Username); err != nil {
+		serverError(w, err)
+		return
+	}
+	send(w, map[string]any{"ok": true})
 }
 
 // handleSetupAdmin creates the first administrator and signs them in.

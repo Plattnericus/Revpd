@@ -55,7 +55,12 @@ type liveGateway struct {
 const livePassword = "CorrectHorseBatteryStaple"
 
 // startGateway wires the same components cmd/revpd wires in production.
-func startGateway(t *testing.T, asleep bool) *liveGateway {
+// tune lets a test change the configuration before the gateway starts, for
+// the handful of tests that are about a setting rather than the happy path.
+// approver stands in for Duo; nil is what every test used before push existed
+// as a factor here, so it is a plain parameter rather than another variadic —
+// Go allows only one of those, and tune already has the job.
+func startGateway(t *testing.T, asleep bool, approver policy.Approver, tune ...func(*config.Config)) *liveGateway {
 	t.Helper()
 	ctx := context.Background()
 
@@ -79,6 +84,9 @@ func startGateway(t *testing.T, asleep bool) *liveGateway {
 	cfg.WoL.ProbeSettle = 0
 	cfg.WoL.Repeat = 1
 	cfg.Grant.TTL = time.Minute
+	for _, fn := range tune {
+		fn(&cfg)
+	}
 
 	key, _ := crypto.NewMasterKey()
 	sealer, err := crypto.NewSealer(key)
@@ -122,7 +130,7 @@ func startGateway(t *testing.T, asleep bool) *liveGateway {
 		TTL: time.Hour, Idle: time.Hour, MaxFailures: 50,
 		LockoutBase: time.Millisecond, LockoutMax: time.Second,
 	})
-	engine := policy.New(db, log, cfg, nil).WithSecrets(sealer, am)
+	engine := policy.New(db, log, cfg, approver).WithSecrets(sealer, am)
 
 	login := rdp.NewLogin(rdp.Options{
 		TLSConfig:        &tls.Config{Certificates: []tls.Certificate{selfSigned(t)}, MinVersion: tls.VersionTLS12},
@@ -380,16 +388,16 @@ func buildConnectInitial() []byte {
 	userData := append(userDataBlock(0xC001, core), userDataBlock(0xC003, netData)...)
 
 	// GCC Conference Create Request, PER encoded.
-	gcc := []byte{0x00}                                     // choice
-	gcc = append(gcc, 0x05, 0x00, 0x14, 0x7C, 0x00, 0x01)   // t124 object identifier
-	gcc = append(gcc, perLength(len(userData)+14)...)       // length
-	gcc = append(gcc, 0xC1, 0x08, 0x00, 0x10, 0x00, 0x01)   // choice, selection, "1", padding, sets
-	gcc = append(gcc, 0xC0, 0x00)                           // choice, octet string length 0
-	gcc = append(gcc, []byte("Duca")...)                    // client-to-server key
+	gcc := []byte{0x00}                                   // choice
+	gcc = append(gcc, 0x05, 0x00, 0x14, 0x7C, 0x00, 0x01) // t124 object identifier
+	gcc = append(gcc, perLength(len(userData)+14)...)     // length
+	gcc = append(gcc, 0xC1, 0x08, 0x00, 0x10, 0x00, 0x01) // choice, selection, "1", padding, sets
+	gcc = append(gcc, 0xC0, 0x00)                         // choice, octet string length 0
+	gcc = append(gcc, []byte("Duca")...)                  // client-to-server key
 	gcc = append(gcc, perLength(len(userData))...)
 	gcc = append(gcc, userData...)
 
-	inner := berTagged(0x04, []byte{0x01})            // callingDomainSelector
+	inner := berTagged(0x04, []byte{0x01})                  // callingDomainSelector
 	inner = append(inner, berTagged(0x04, []byte{0x01})...) // calledDomainSelector
 	inner = append(inner, berTagged(0x01, []byte{0xFF})...) // upwardFlag
 	inner = append(inner, domainParameters()...)            // target
@@ -634,7 +642,7 @@ func firstBytes(b []byte) []byte {
 // Everything, in one go: a sleeping machine, a password with the code
 // appended, Wake-on-LAN, a redirection, a reconnect, and forwarded bytes.
 func TestRDPLoginToForwardedSessionEndToEnd(t *testing.T) {
-	g := startGateway(t, true) // target starts powered off
+	g := startGateway(t, true, nil) // target starts powered off
 	ctx := context.Background()
 
 	if aliveAt(g.win) {
@@ -693,8 +701,78 @@ func TestRDPLoginToForwardedSessionEndToEnd(t *testing.T) {
 }
 
 // A wrong code must not produce a redirection, and must not reach the target.
+/*
+	"password,push" instead of a typed code is the other half of Weg 0: the
+	client sends its Client Info PDU and then simply waits — mstsc is sitting
+	there expecting a licence PDU back, with nothing of its own left to send —
+	while this end asks Duo and blocks on the answer. Approving on the phone
+	is what makes the connection continue; nothing here moves it along on a
+	timer.
+
+	The `delay` on the mock is not padding. Without it, a bug that returned
+	before actually waiting for the approval would still pass — the assertion
+	on elapsed time is the only thing that would catch that.
+*/
+func TestRDPLoginWithPushHoldsUntilApproved(t *testing.T) {
+	approver := &mockApprover{approve: true, delay: 400 * time.Millisecond}
+	g := startGateway(t, false, approver)
+
+	c := dialRDP(t, g.addr())
+	c.negotiate(t, "felix", "")
+	c.mcsConnect(t)
+	c.sendClientInfo(t, "", "felix", livePassword+",push")
+
+	start := time.Now()
+	token, gotUser, gotPassword := c.readRedirection(t)
+	waited := time.Since(start)
+
+	if waited < approver.delay {
+		t.Fatalf("the redirection arrived after %s, before the %s approval delay — the connection was not held", waited, approver.delay)
+	}
+	if approver.called() != 1 {
+		t.Fatalf("duo was asked %d times, want 1", approver.called())
+	}
+	if token == "" {
+		t.Fatal("no routing token after an approved push")
+	}
+	if gotUser != "felix" || gotPassword != livePassword {
+		t.Errorf("redirection user/password = %q/%q, want them passed through", gotUser, gotPassword)
+	}
+}
+
+// Declining the phone prompt must refuse the connection, not fall back to
+// letting it through.
+func TestRDPLoginWithPushDeniedIsRefused(t *testing.T) {
+	approver := &mockApprover{approve: false}
+	g := startGateway(t, false, approver)
+
+	c := dialRDP(t, g.addr())
+	c.negotiate(t, "felix", "")
+	c.mcsConnect(t)
+	c.sendClientInfo(t, "", "felix", livePassword+",push")
+
+	lic := c.ioPayload(t)
+	if len(lic) < 4 || binary.LittleEndian.Uint16(lic[0:2])&0x0080 == 0 {
+		t.Fatalf("expected a licence pdu, got % x", firstBytes(lic))
+	}
+
+	c.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	body, err := c.readTPKT()
+	if err == nil {
+		if len(body) < 4 {
+			t.Fatalf("unexpected reply of %d bytes", len(body))
+		}
+		if got := body[3] &^ 0x03; got != 0x20 {
+			t.Fatalf("server sent 0x%02x after a declined push, want a disconnect", got)
+		}
+	}
+	if len(g.win.received()) != 0 {
+		t.Fatal("the target received bytes despite a declined push")
+	}
+}
+
 func TestRDPLoginWithWrongCodeIsRefused(t *testing.T) {
-	g := startGateway(t, false)
+	g := startGateway(t, false, nil)
 
 	c := dialRDP(t, g.addr())
 	c.negotiate(t, "felix", "")
@@ -734,9 +812,58 @@ func TestRDPLoginWithWrongCodeIsRefused(t *testing.T) {
 	}
 }
 
+/*
+A revpd account password only ever proves the person to revpd — it does
+not have to be the target's Windows password too, and forcing the two to
+match is not something every household will get right on the first try.
+Turning pass-through off has to be a real way out of that, not a switch
+that looks like it does something and does not: if the fields still went
+out, Windows would fail its own logon with credentials the user has no way
+to correct, since the client already believes the gateway supplied them.
+*/
+func TestPassThroughCredentialsCanBeTurnedOff(t *testing.T) {
+	g := startGateway(t, false, nil, func(c *config.Config) {
+		c.RDPLogin.PassThroughCredentials = false
+	})
+
+	c := dialRDP(t, g.addr())
+	c.negotiate(t, "felix", "")
+	c.mcsConnect(t)
+	c.sendClientInfo(t, "", "felix", livePassword+","+g.code(t))
+
+	token, gotUser, gotPassword := c.readRedirection(t)
+
+	if token == "" {
+		t.Fatal("no routing token in the redirection — the login itself should still have succeeded")
+	}
+	if gotUser != "" {
+		t.Errorf("username %q was passed through with pass-through disabled", gotUser)
+	}
+	if gotPassword != "" {
+		t.Error("a password was passed through with pass-through disabled")
+	}
+}
+
+// The default has always been to pass the credentials on, and a config change
+// elsewhere must not flip that silently.
+func TestPassThroughCredentialsIsOnByDefault(t *testing.T) {
+	g := startGateway(t, false, nil)
+
+	c := dialRDP(t, g.addr())
+	c.negotiate(t, "felix", "")
+	c.mcsConnect(t)
+	c.sendClientInfo(t, "", "felix", livePassword+","+g.code(t))
+
+	_, gotUser, gotPassword := c.readRedirection(t)
+
+	if gotUser != "felix" || gotPassword != livePassword {
+		t.Errorf("redirection user/password = %q/%q, want them passed through by default", gotUser, gotPassword)
+	}
+}
+
 // A token that was already spent must not open a second session.
 func TestRoutingTokenCannotBeReplayed(t *testing.T) {
-	g := startGateway(t, false)
+	g := startGateway(t, false, nil)
 
 	c := dialRDP(t, g.addr())
 	c.negotiate(t, "felix", "")

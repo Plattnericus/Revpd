@@ -150,6 +150,9 @@ const de = {
   'discover.added': 'Hinzugefügt',
   'discover.already': 'Schon vorhanden',
   'discover.button': 'Geräte suchen',
+  'discover.windowsOnly': 'Nur Windows anzeigen',
+  'discover.nmapActive': 'nmap ist installiert — genauere Erkennung aktiv',
+  'discover.noneMatchFilter': 'Nichts davon ist Windows. Häkchen oben entfernen, um alles zu sehen.',
 
   'settings.pendingRestart': 'Neustart ausstehend',
   'settings.stillRunning': 'Läuft noch mit:',
@@ -358,6 +361,9 @@ const en: Dict = {
   'discover.added': 'Added',
   'discover.already': 'Already added',
   'discover.button': 'Find machines',
+  'discover.windowsOnly': 'Show Windows only',
+  'discover.nmapActive': 'nmap is installed — sharper detection is active',
+  'discover.noneMatchFilter': 'None of these are Windows. Clear the box above to see everything.',
 
   'settings.pendingRestart': 'awaiting restart',
   'settings.stillRunning': 'Still running with:',
@@ -563,6 +569,9 @@ const fr: Dict = {
   'discover.added': 'Ajouté',
   'discover.already': 'Déjà ajouté',
   'discover.button': 'Rechercher des machines',
+  'discover.windowsOnly': 'Afficher uniquement Windows',
+  'discover.nmapActive': 'nmap est installé — détection plus fine active',
+  'discover.noneMatchFilter': 'Aucun de ces appareils n’est sous Windows. Décochez la case ci-dessus pour tout voir.',
 
   'settings.pendingRestart': 'redémarrage en attente',
   'settings.stillRunning': 'Fonctionne encore avec :',
@@ -768,6 +777,9 @@ const es: Dict = {
   'discover.added': 'Añadido',
   'discover.already': 'Ya añadido',
   'discover.button': 'Buscar equipos',
+  'discover.windowsOnly': 'Mostrar solo Windows',
+  'discover.nmapActive': 'nmap está instalado — detección más precisa activa',
+  'discover.noneMatchFilter': 'Ninguno de estos es Windows. Desmarca la casilla de arriba para ver todo.',
 
   'settings.pendingRestart': 'reinicio pendiente',
   'settings.stillRunning': 'Sigue usando:',
@@ -973,6 +985,9 @@ const it: Dict = {
   'discover.added': 'Aggiunta',
   'discover.already': 'Già presente',
   'discover.button': 'Cerca macchine',
+  'discover.windowsOnly': 'Mostra solo Windows',
+  'discover.nmapActive': 'nmap è installato — rilevamento più preciso attivo',
+  'discover.noneMatchFilter': 'Nessuno di questi è Windows. Deseleziona la casella qui sopra per vedere tutto.',
 
   'settings.pendingRestart': 'riavvio in attesa',
   'settings.stillRunning': 'Ancora in uso:',
@@ -1178,6 +1193,9 @@ const nl: Dict = {
   'discover.added': 'Toegevoegd',
   'discover.already': 'Al toegevoegd',
   'discover.button': 'Machines zoeken',
+  'discover.windowsOnly': 'Alleen Windows tonen',
+  'discover.nmapActive': 'nmap is geïnstalleerd — nauwkeurigere herkenning actief',
+  'discover.noneMatchFilter': 'Geen van deze is Windows. Vink het vakje hierboven uit om alles te zien.',
 
   'settings.pendingRestart': 'herstart nodig',
   'settings.stillRunning': 'Draait nog met:',
@@ -1383,6 +1401,9 @@ const pl: Dict = {
   'discover.added': 'Dodano',
   'discover.already': 'Już dodany',
   'discover.button': 'Znajdź komputery',
+  'discover.windowsOnly': 'Pokaż tylko Windows',
+  'discover.nmapActive': 'nmap jest zainstalowany — dokładniejsze wykrywanie aktywne',
+  'discover.noneMatchFilter': 'Żadne z nich nie jest Windows. Odznacz pole powyżej, aby zobaczyć wszystko.',
 
   'settings.pendingRestart': 'oczekuje na restart',
   'settings.stillRunning': 'Nadal działa z:',
@@ -1588,6 +1609,9 @@ const pt: Dict = {
   'discover.added': 'Adicionada',
   'discover.already': 'Já adicionada',
   'discover.button': 'Procurar máquinas',
+  'discover.windowsOnly': 'Mostrar só Windows',
+  'discover.nmapActive': 'o nmap está instalado — deteção mais precisa ativa',
+  'discover.noneMatchFilter': 'Nenhum destes é Windows. Desmarque a caixa acima para ver tudo.',
 
   'settings.pendingRestart': 'reinício pendente',
   'settings.stillRunning': 'Ainda a usar:',
@@ -1793,6 +1817,9 @@ const tr: Dict = {
   'discover.added': 'Eklendi',
   'discover.already': 'Zaten ekli',
   'discover.button': 'Makine ara',
+  'discover.windowsOnly': 'Yalnızca Windows göster',
+  'discover.nmapActive': 'nmap kurulu — daha keskin algılama etkin',
+  'discover.noneMatchFilter': 'Bunların hiçbiri Windows değil. Hepsini görmek için yukarıdaki kutuyu temizleyin.',
 
   'settings.pendingRestart': 'yeniden başlatma bekliyor',
   'settings.stillRunning': 'Hâlâ şu değerle:',
@@ -1998,6 +2025,9 @@ const ru: Dict = {
   'discover.added': 'Добавлен',
   'discover.already': 'Уже добавлен',
   'discover.button': 'Найти компьютеры',
+  'discover.windowsOnly': 'Показывать только Windows',
+  'discover.nmapActive': 'nmap установлен — включено более точное определение',
+  'discover.noneMatchFilter': 'Среди них нет Windows. Снимите флажок выше, чтобы увидеть всё.',
 
   'settings.pendingRestart': 'ожидает перезапуска',
   'settings.stillRunning': 'Сейчас работает с:',

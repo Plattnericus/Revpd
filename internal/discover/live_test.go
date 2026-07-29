@@ -76,6 +76,45 @@ func TestLiveSweep(t *testing.T) {
 	}
 }
 
+// TestLiveNmapEnrichment shows what nmap actually adds on top of the native
+// probe against a real machine, when nmap happens to be on this machine's
+// PATH. Skipped otherwise — most development and CI machines will not have
+// it installed, and that is meant to be a fine place for this package to be.
+//
+//	REVPD_LIVE_HOST=192.168.178.250 go test ./internal/discover -run LiveNmap -v
+func TestLiveNmapEnrichment(t *testing.T) {
+	host := os.Getenv("REVPD_LIVE_HOST")
+	if host == "" {
+		t.Skip("set REVPD_LIVE_HOST to probe a real machine")
+	}
+	if !NmapAvailable() {
+		t.Skip("nmap is not on PATH — the enrichment this test is about never runs without it")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	h, err := Scanner{}.Probe(ctx, host)
+	if err != nil {
+		t.Fatalf("probing %s failed: %v", host, err)
+	}
+
+	t.Logf("os         %s %s (%s)", h.OS, h.Distro, h.Confidence)
+	for _, w := range h.Why {
+		t.Logf("           - %s", w)
+	}
+
+	foundNmapEvidence := false
+	for _, w := range h.Why {
+		if len(w) >= 4 && w[:4] == "nmap" {
+			foundNmapEvidence = true
+		}
+	}
+	if !foundNmapEvidence {
+		t.Logf("nmap ran but contributed nothing new for %s — its own guess likely already matched the native one", host)
+	}
+}
+
 func orDash(s string) string {
 	if s == "" {
 		return "—"

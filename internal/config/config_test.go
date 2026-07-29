@@ -85,8 +85,13 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"listen without a port", "web.listen", func(c *config.Config) { c.Web.Listen = "8443" }},
 		{"relay listen without a port", "relay.listen", func(c *config.Config) { c.Relay.Listen = "3389" }},
 		{"jit without hold", "hold_timeout", func(c *config.Config) {
+			c.RDPLogin.Enabled = false // isolate the hold_timeout problem from the one below
 			c.JIT.Enabled = true
 			c.JIT.HoldTimeout = 0
+		}},
+		{"rdp_login and jit both enabled", "jit.enabled has no effect", func(c *config.Config) {
+			c.RDPLogin.Enabled = true
+			c.JIT.Enabled = true
 		}},
 		{"notifications with nowhere to send", "notify.url", func(c *config.Config) {
 			c.Notify.Enabled = true

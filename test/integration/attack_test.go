@@ -266,7 +266,7 @@ func TestLockoutHoldsEvenWithTheRightPassword(t *testing.T) {
 
 // Connections that open and say nothing must not be able to fill the gateway.
 func TestSilentConnectionsDoNotPileUp(t *testing.T) {
-	g := startGateway(t, false)
+	g := startGateway(t, false, nil)
 
 	var conns []net.Conn
 	defer func() {
@@ -301,7 +301,7 @@ func TestSilentConnectionsDoNotPileUp(t *testing.T) {
 
 // A client that sends a huge first packet must be cut off, not buffered.
 func TestOversizedHandshakeIsRefused(t *testing.T) {
-	g := startGateway(t, false)
+	g := startGateway(t, false, nil)
 
 	conn, err := net.DialTimeout("tcp", g.addr(), 5*time.Second)
 	if err != nil {

@@ -34,6 +34,14 @@ export function DiscoverSheet({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [added, setAdded] = useState<string[]>([])
+  const [nmapAvailable, setNmapAvailable] = useState(false)
+
+  // Off by default: a device that turns out not to be Windows is still worth
+  // seeing once, if only to notice it should not have been on the network at
+  // all. The toggle is for the busy list a real home network produces, not a
+  // permanent blindfold.
+  const [windowsOnly, setWindowsOnly] = useState(false)
+  const shown = hosts?.filter((h) => !windowsOnly || h.os === 'windows') ?? null
 
   const run = useCallback(async (fn: () => Promise<{ hosts: ApiHost[]; known: string[] }>) => {
     setBusy(true)
@@ -59,6 +67,7 @@ export function DiscoverSheet({
     try {
       const data = await api.discoverRanges()
       setRanges(data.ranges)
+      setNmapAvailable(data.nmap_available)
 
       const usable = data.ranges.find((r) => !r.too_large)
       if (!usable) return
@@ -173,15 +182,35 @@ export function DiscoverSheet({
         </div>
       )}
 
-      {hosts?.length === 0 && !busy && (
+      {hosts && hosts.length > 0 && (
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <label className="flex select-none items-center gap-2 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+            <input
+              type="checkbox"
+              checked={windowsOnly}
+              onChange={(e) => setWindowsOnly(e.target.checked)}
+              className="h-4 w-4 rounded"
+              style={{ accentColor: 'var(--accent)' }}
+            />
+            {t('discover.windowsOnly')}
+          </label>
+          {nmapAvailable && (
+            <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+              {t('discover.nmapActive')}
+            </span>
+          )}
+        </div>
+      )}
+
+      {shown?.length === 0 && !busy && (
         <p className="mt-5 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
-          {t('discover.nothingFound')}
+          {hosts && hosts.length > 0 ? t('discover.noneMatchFilter') : t('discover.nothingFound')}
         </p>
       )}
 
-      {hosts && hosts.length > 0 && (
-        <div className="mt-5 flex flex-col gap-2">
-          {hosts.map((h) => (
+      {shown && shown.length > 0 && (
+        <div className="mt-3 flex flex-col gap-2">
+          {shown.map((h) => (
             <Found
               key={h.ip}
               host={h}

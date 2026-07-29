@@ -66,6 +66,60 @@ func liveSetup(t *testing.T) liveEnv {
 // Named to sort before the test that signs in, because a successful login
 // leaves a grant behind and the relay would then forward this connection
 // straight to the machine instead of asking for anything.
+/*
+	Whether mstsc shows the ordinary self-signed warning, or an extra, more
+	alarming "the name does not match" on top of it, is decided entirely by
+	this: does the certificate the gateway just presented cover the address
+	that was actually dialed?
+
+	InsecureSkipVerify above is why this needs its own check rather than
+	riding along with the login test — that setting skips exactly the
+	comparison this exists to make, on purpose, so the login test is not
+	blocked by a self-signed root that will never be in anyone's trust store.
+	This test undoes that, but only for the one property CA trust has nothing
+	to do with: the name.
+
+	Point REVPD_LIVE_GATEWAY at the same gateway two ways — its LAN address
+	and its hostname — and run this both times. Real deployments are dialed
+	both ways depending on whether DNS is set up, and each is its own claim
+	about what the certificate covers.
+*/
+func TestLiveCertificateMatchesTheDialedAddress(t *testing.T) {
+	env := liveSetup(t)
+
+	host := env.gateway
+	if h, _, err := net.SplitHostPort(env.gateway); err == nil {
+		host = h
+	}
+
+	c, err := dialTestClient(env.gateway)
+	if err != nil {
+		t.Fatalf("dial %s: %v", env.gateway, err)
+	}
+	defer c.close()
+
+	if _, err := c.handshake(env.user, ProtocolRDP|ProtocolSSL); err != nil {
+		t.Fatalf("x224 handshake: %v", err)
+	}
+	if err := c.startTLS(); err != nil {
+		t.Fatalf("tls: %v", err)
+	}
+
+	certs := c.tls.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		t.Fatal("the gateway presented no certificate at all")
+	}
+	leaf := certs[0]
+
+	if err := leaf.VerifyHostname(host); err != nil {
+		t.Errorf("the certificate does not cover %q, which is what was dialed: %v\n"+
+			"DNS names on the certificate: %v\nIP addresses on the certificate: %v",
+			host, err, leaf.DNSNames, leaf.IPAddresses)
+	} else {
+		t.Logf("certificate covers %q — dialing it this way will show only the ordinary self-signed warning", host)
+	}
+}
+
 func TestLiveAWrongCodeIsRefused(t *testing.T) {
 	env := liveSetup(t)
 

@@ -91,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/setup/enroll", s.authed(s.handleEnrollStart))
 	mux.Handle("POST /api/setup/enroll/confirm", s.authed(s.handleEnrollConfirm))
 	mux.Handle("POST /api/setup/target", s.admin(s.handleSetupTarget))
+	mux.Handle("POST /api/setup/complete", s.authed(s.handleSetupComplete))
 
 	// Passkeys. Login is public by necessity; registration needs a session.
 	mux.HandleFunc("POST /api/passkey/login/begin", s.handlePasskeyLoginBegin)
@@ -152,7 +153,7 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/", s.assets)
 	}
 
-	return s.withSecurityHeaders(mux)
+	return s.withAccessLog(s.withSecurityHeaders(mux))
 }
 
 /* ---------------------------------------------------------- middleware --- */
@@ -187,6 +188,7 @@ func (s *Server) authed(h http.HandlerFunc) http.Handler {
 			return
 		}
 
+		noteRequestUser(r.Context(), u.Username)
 		h(w, r.WithContext(context.WithValue(r.Context(), userKey, u)))
 	})
 }

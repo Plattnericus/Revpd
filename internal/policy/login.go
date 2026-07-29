@@ -154,14 +154,25 @@ func (e *Engine) Authenticate(ctx context.Context, srcIP net.IP, creds *rdp.Cred
 		SrcIP: srcIP.String(), Detail: map[string]any{"via": "rdp-redirect"},
 	})
 
-	return &rdp.Redirection{
-		Token: token,
+	redir := &rdp.Redirection{Token: token}
 
-		// Handed straight back to Windows so the user types once. Never stored.
-		Username: creds.Username,
-		Domain:   creds.Domain,
-		Password: password,
-	}, nil
+	// Handed straight back to Windows so the user types once. Never stored.
+	//
+	// This is the one place the setting actually has an effect: leaving these
+	// three fields off the redirection is the entire difference between "type
+	// it once" and "Windows asks again". A revpd account is free to have a
+	// password of its own that has nothing to do with the Windows account it
+	// unlocks — the field above only ever proved the *person* to revpd — and
+	// passing a mismatched one through here would fail Windows' own logon
+	// with no way to correct it, since the client already believes the
+	// gateway supplied the answer.
+	if e.cfg.RDPLogin.PassThroughCredentials {
+		redir.Username = creds.Username
+		redir.Domain = creds.Domain
+		redir.Password = password
+	}
+
+	return redir, nil
 }
 
 // AuthorizeToken resolves the routing token of a redirected reconnect.

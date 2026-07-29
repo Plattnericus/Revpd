@@ -84,6 +84,7 @@ func TestApplyLayersOverrides(t *testing.T) {
 		"web.listen":        ":8443",
 		"grant.ttl":         "300",
 		"auth.max_failures": "9",
+		"rdp_login.enabled": "false", // jit.enabled has no effect while this stays on
 		"jit.enabled":       "true",
 	})
 	if err != nil {

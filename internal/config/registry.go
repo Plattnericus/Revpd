@@ -185,7 +185,7 @@ func Registry() []Setting {
 			"Budget for the whole sign-in, including waiting for the machine to boot."),
 		duration("rdp_login.step_timeout", GroupDesktop, true, 5, 300, func(c *Config) *time.Duration { return &c.RDPLogin.StepTimeout }, ""),
 		boolean("jit.enabled", GroupDesktop, true, func(c *Config) *bool { return &c.JIT.Enabled },
-			"Hold the connection while a push approval is answered. Off by default because it acts on an unauthenticated hint."),
+			"Hold the connection while a push approval is answered, with nothing typed into Remote Desktop at all. Needs Sign in from Remote Desktop above turned off first — that one always claims a connection before this gets a turn."),
 		duration("jit.hold_timeout", GroupDesktop, true, 5, 300, func(c *Config) *time.Duration { return &c.JIT.HoldTimeout }, ""),
 
 		/* ---------------------------------------------------------- wake --- */

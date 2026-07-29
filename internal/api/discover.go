@@ -36,6 +36,11 @@ func (s *Server) handleDiscoverRanges(w http.ResponseWriter, r *http.Request) {
 	send(w, map[string]any{
 		"ranges": ranges,
 		"limit":  discover.MaxHosts,
+
+		// Whether the richer, version-based detection is active. Decided once
+		// here rather than guessed from the results: a network with only
+		// unremarkable devices on it would otherwise look the same either way.
+		"nmap_available": discover.NmapAvailable(),
 	})
 }
 

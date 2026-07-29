@@ -70,6 +70,19 @@ func (e *apiEnv) status(t *testing.T) (needed bool, cookies []*http.Cookie, csrf
 	return body["setup_required"] == true, resp.Cookies(), csrfOf(resp.Cookies())
 }
 
+// setupComplete is whether the wizard has been walked to its last screen —
+// the flag a refresh checks before deciding to resume it.
+func (e *apiEnv) setupComplete(t *testing.T) bool {
+	t.Helper()
+
+	resp := e.call(t, "GET", "/api/setup/status", nil, nil, "")
+	body := decodeBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("setup status returned %d", resp.StatusCode)
+	}
+	return body["setup_complete"] == true
+}
+
 /* ---------------------------------------------------------- the window --- */
 
 func TestSetupIsOfferedOnAnEmptyGateway(t *testing.T) {
@@ -277,6 +290,105 @@ func TestSetupWizardEndToEnd(t *testing.T) {
 	}
 	if loginBody["stage"] != "mfa" {
 		t.Fatalf("login stage = %v, want mfa — the second factor is not being demanded", loginBody["stage"])
+	}
+}
+
+/*
+	The bug this guards against: an admin is created, the browser is closed or
+	refreshed before the wizard is walked to its end, and the next visit lands
+	on an empty dashboard that never mentions the second factor or the first
+	machine again — indistinguishable from a gateway somebody actually
+	finished setting up.
+
+	setup_complete is what tells the two apart. It stays false through every
+	step up to the last one, so a browser re-asking after any kind of
+	interruption gets sent back to resume rather than past it.
+*/
+func TestSetupCompleteStaysFalseUntilTheWizardIsWalkedToItsEnd(t *testing.T) {
+	e := newBlankAPI(t)
+	_, cookies, csrf := e.status(t)
+
+	if e.setupComplete(t) {
+		t.Fatal("a gateway with no accounts at all reports the wizard complete")
+	}
+
+	resp := e.call(t, "POST", "/api/setup/admin", map[string]string{
+		"username": "felix", "display_name": "Felix", "password": "CorrectHorseBattery",
+	}, cookies, csrf)
+	decodeBody(t, resp)
+	cookies = resp.Cookies()
+	csrf = csrfOf(cookies)
+
+	// The account exists now, but nothing was walked to the end yet — this is
+	// exactly the moment a refresh must not skip past.
+	if e.setupComplete(t) {
+		t.Fatal("the wizard reports complete right after the account was created, before anything else happened")
+	}
+
+	resp = e.call(t, "POST", "/api/setup/enroll", nil, cookies, csrf)
+	decodeBody(t, resp)
+	if e.setupComplete(t) {
+		t.Fatal("enrolling a second factor alone marked the wizard complete")
+	}
+
+	resp = e.call(t, "POST", "/api/setup/target", map[string]string{
+		"name": "Office PC", "ip": "192.168.1.40", "mac": "a8:a1:59:3c:d2:11",
+	}, cookies, csrf)
+	decodeBody(t, resp)
+	if e.setupComplete(t) {
+		t.Fatal("adding a target alone marked the wizard complete")
+	}
+
+	// Only the explicit, final step does.
+	resp = e.call(t, "POST", "/api/setup/complete", nil, cookies, csrf)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("marking setup complete returned %d: %v", resp.StatusCode, decodeBody(t, resp))
+	}
+	decodeBody(t, resp)
+
+	if !e.setupComplete(t) {
+		t.Fatal("the wizard was walked to its end and still does not report complete")
+	}
+}
+
+// Nobody but the administrator who just walked the wizard may flip this —
+// there is no reason a stranger's request should decide whether somebody
+// else's browser gets sent back through it.
+func TestSetupCompleteRequiresASession(t *testing.T) {
+	e := newBlankAPI(t)
+	_, cookies, csrf := e.status(t)
+
+	resp := e.call(t, "POST", "/api/setup/admin", map[string]string{
+		"username": "felix", "password": "CorrectHorseBattery",
+	}, cookies, csrf)
+	decodeBody(t, resp)
+
+	unauth := e.call(t, "POST", "/api/setup/complete", nil, nil, "")
+	unauth.Body.Close()
+	if unauth.StatusCode == http.StatusOK {
+		t.Fatal("an unauthenticated request was able to mark setup complete")
+	}
+	if e.setupComplete(t) {
+		t.Fatal("setup reports complete after an unauthenticated attempt")
+	}
+}
+
+// Same CSRF rule as everything else behind a session — this is not a
+// loophole just because it only flips one flag.
+func TestSetupCompleteRequiresCSRF(t *testing.T) {
+	e := newBlankAPI(t)
+	_, cookies, csrf := e.status(t)
+
+	resp := e.call(t, "POST", "/api/setup/admin", map[string]string{
+		"username": "felix", "password": "CorrectHorseBattery",
+	}, cookies, csrf)
+	decodeBody(t, resp)
+	cookies = resp.Cookies()
+
+	noToken := e.call(t, "POST", "/api/setup/complete", nil, cookies, "")
+	noToken.Body.Close()
+	if noToken.StatusCode != http.StatusForbidden {
+		t.Fatalf("setup/complete without a csrf token returned %d, want 403", noToken.StatusCode)
 	}
 }
 

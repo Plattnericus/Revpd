@@ -718,6 +718,16 @@ func (c Config) Validate() error {
 		// because it is almost never what someone meant to configure.
 		problems = append(problems, "both rdp_login and jit are disabled — nothing can connect except through the web portal; set rdp_login.enabled: true")
 	}
+	if c.RDPLogin.Enabled && c.JIT.Enabled {
+		// The relay picks rdp_login for every connection that has no grant
+		// yet, unconditionally, before it ever looks at whether jit is on —
+		// there is nothing in the first packet that tells them apart, since
+		// an ordinary mstsc offers the same negotiation either way. So with
+		// both on, jit never runs: not held, not denied, just never reached.
+		// Worth refusing outright rather than leaving an operator to enable
+		// something that quietly does nothing.
+		problems = append(problems, "rdp_login and jit are both enabled, but rdp_login always claims a connection first — jit.enabled has no effect while it stays on. Turn rdp_login off to use jit instead.")
+	}
 	if c.Auth.MaxFailures < 1 {
 		problems = append(problems, "auth.max_failures must be at least 1")
 	}

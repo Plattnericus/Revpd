@@ -127,6 +127,12 @@ export const api = {
       csrf: string
       /** False when the wizard may offer to skip enrolling a second factor. */
       second_factor_required: boolean
+      /**
+       * False for as long as the wizard has never been walked to its last
+       * screen. A refresh part-way through resumes it instead of landing on
+       * an empty dashboard that never asks again.
+       */
+      setup_complete: boolean
     }>('/api/setup/status'),
 
   setupAdmin: (u: { username: string; display_name: string; password: string }) =>
@@ -137,6 +143,9 @@ export const api = {
   enrollConfirm: (code: string) => post<{ ok: boolean }>('/api/setup/enroll/confirm', { code }),
 
   setupTarget: (t: { name: string; ip: string; mac: string }) => post<{ id: number }>('/api/setup/target', t),
+
+  /** Marks the wizard walked to its end, so a refresh no longer resumes it. */
+  setupComplete: () => post<{ ok: boolean }>('/api/setup/complete'),
 
   /* ------------------------------------------------------- passkeys --- */
 
@@ -213,7 +222,8 @@ export const api = {
 
   /* ------------------------------------------------------ discovery --- */
 
-  discoverRanges: () => get<{ ranges: ApiRange[]; limit: number }>('/api/admin/discover/ranges'),
+  discoverRanges: () =>
+    get<{ ranges: ApiRange[]; limit: number; nmap_available: boolean }>('/api/admin/discover/ranges'),
 
   discoverScan: (cidr: string) =>
     post<{ hosts: ApiHost[]; known: string[] }>('/api/admin/discover/scan', { cidr }),

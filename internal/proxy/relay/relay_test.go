@@ -499,6 +499,41 @@ func TestJITReplaysFirstPacketVerbatim(t *testing.T) {
 	}
 }
 
+/*
+	With rdp_login enabled, JIT never runs at all — not "denied", not "held",
+	simply never called, for any connection, including one this exact policy
+	would have approved. handle()'s switch tries Login first and Login always
+	claims the connection when it is configured, so a client that cannot do
+	the rdp_login exchange (no username typed, a client that ignores Server
+	Redirection) gets whatever Login.Run decides and nothing else is ever
+	tried on its behalf.
+
+	This is not a crash or a security hole — nothing unauthorized gets
+	through — but an operator who turns JIT on as a second way in, alongside
+	the default rdp_login, is turning on something that this proves can never
+	fire while rdp_login stays on. Recorded here so the choice is visible
+	rather than silently absent.
+*/
+func TestJITNeverRunsWhenLoginIsAlsoConfigured(t *testing.T) {
+	backend := newEchoBackend(t)
+	pol := &fakePolicy{allow: false, jitAllow: true, backend: backend.addr()}
+	login := &fakeLogin{}
+
+	s := startRelay(t, relay.Options{JITEnabled: true, Login: login}, pol, &fakeRecorder{})
+
+	conn, _ := net.Dial("tcp", s.Addr().String())
+	defer conn.Close()
+	conn.Write(buildCR("felix"))
+	time.Sleep(400 * time.Millisecond)
+
+	if login.called() != 1 {
+		t.Fatalf("login called %d times, want 1 — it should still be the one path taken", login.called())
+	}
+	if n := pol.reviewed; n != 0 {
+		t.Fatalf("JIT's Review ran %d times despite being unreachable behind Login", n)
+	}
+}
+
 func TestJITDeniedIsNotForwarded(t *testing.T) {
 	backend := newEchoBackend(t)
 	pol := &fakePolicy{allow: false, jitAllow: false, backend: backend.addr()}

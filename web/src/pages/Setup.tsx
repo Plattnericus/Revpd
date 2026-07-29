@@ -31,14 +31,21 @@ export function Setup() {
   const [error, setError] = useState('')
 
   // Whether anyone belongs on this page at all is the guard's decision — it
-  // is asked before this renders. All that is wanted here is the gateway
-  // address to show on the last step.
+  // is asked before this renders. What is decided here is only where on the
+  // wizard to open: a fresh gateway starts at the first screen, but a
+  // returning admin whose account already exists — a refresh, a closed tab,
+  // a session that outlived the browser — has nothing left to prove and
+  // should not be asked to create the account a second time. Re-running the
+  // enrolment step is safe even so: it mints a fresh secret and fresh backup
+  // codes rather than trusting whatever was on screen the moment this was
+  // abandoned, which nobody can prove was ever actually saved.
   useEffect(() => {
     api
       .setupStatus()
       .then((s) => {
         setGateway(s.gateway ?? '')
         setFactorRequired(s.second_factor_required !== false)
+        if (!s.setup_required) setStep('enroll')
       })
       .catch(() => {})
   }, [])
@@ -104,6 +111,10 @@ export function Setup() {
               <DoneStep
                 gateway={gateway}
                 onFinish={async () => {
+                  // Walked to the end. From here a refresh lands on the
+                  // dashboard instead of resuming a wizard with nothing left
+                  // to ask.
+                  await api.setupComplete().catch(() => {})
                   await refresh()
                   nav('/', { replace: true })
                 }}
